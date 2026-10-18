@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTASA — simple demo</title>
+<style>
+  :root{
+    --ink:#1f2430; --muted:#6b7280; --line:#e5e7eb; --bg:#fafafa;
+    --accent:#2563eb; --accent-ink:#ffffff; --good:#15803d; --good-bg:#f0fdf4;
+    --bad:#b91c1c; --bad-bg:#fef2f2; --card:#ffffff;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    line-height:1.5;
+  }
+  .wrap{max-width:720px; margin:0 auto; padding:32px 20px 80px;}
+  header{display:flex; align-items:center; justify-content:space-between; margin-bottom:28px;}
+  h1{font-size:22px; margin:0;}
+  .reset{
+    background:none; border:1px solid var(--line); color:var(--muted);
+    border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer;
+  }
+  .reset:hover{background:#f3f4f6;}
+  .steps{display:flex; gap:8px; margin-bottom:32px;}
+  .step-dot{
+    flex:1; text-align:center; padding:10px 6px; border-radius:10px;
+    background:#fff; border:1px solid var(--line); font-size:13px; color:var(--muted);
+  }
+  .step-dot.active{border-color:var(--accent); color:var(--accent); font-weight:600; background:#eff6ff;}
+  .step-dot.done{border-color:var(--good); color:var(--good); background:var(--good-bg);}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:24px; margin-bottom:20px;
+  }
+  .card h2{margin:0 0 6px; font-size:19px;}
+  .card p.lede{color:var(--muted); margin:0 0 18px; font-size:15px;}
+  button.primary{
+    background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px;
+    padding:14px 22px; font-size:16px; font-weight:600; cursor:pointer; width:100%;
+  }
+  button.primary:disabled{background:#9ca3af; cursor:not-allowed;}
+  button.secondary{
+    background:#fff; color:var(--accent); border:1.5px solid var(--accent); border-radius:10px;
+    padding:12px 18px; font-size:15px; font-weight:600; cursor:pointer;
+  }
+  button.secondary:disabled{opacity:.5; cursor:not-allowed;}
+  .msg{border-radius:10px; padding:14px 16px; font-size:15px; margin-top:14px;}
+  .msg.good{background:var(--good-bg); color:var(--good); border:1px solid #bbf7d0;}
+  .msg.bad{background:var(--bad-bg); color:var(--bad); border:1px solid #fecaca;}
+  .msg.wait{background:#fffbeb; color:#92400e; border:1px solid #fde68a;}
+  textarea{
+    width:100%; min-height:70px; border:1px solid var(--line); border-radius:10px;
+    padding:12px; font-size:15px; font-family:inherit; resize:vertical;
+  }
+  .gallery{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-top:16px;}
+  .gallery figure{margin:0; text-align:center;}
+  .gallery img{width:100%; border-radius:8px; border:1px solid var(--line); display:block;}
+  .gallery figcaption{font-size:12.5px; color:var(--muted); margin-top:6px;}
+  .approvers{display:flex; flex-direction:column; gap:10px; margin-top:16px;}
+  .approver-row{
+    display:flex; align-items:center; justify-content:space-between;
+    border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+  }
+  .approver-row.approved{border-color:#bbf7d0; background:var(--good-bg);}
+  .progress-bar{height:10px; background:#e5e7eb; border-radius:6px; overflow:hidden; margin:14px 0;}
+  .progress-fill{height:100%; background:var(--good); width:0%; transition:width .3s;}
+  details{margin-top:14px;}
+  details summary{cursor:pointer; color:var(--muted); font-size:13px;}
+  details pre{
+    background:#0b1021; color:#d6e2ff; padding:12px; border-radius:8px;
+    font-size:12px; overflow:auto; margin-top:8px;
+  }
+  .log-line{
+    display:flex; gap:10px; align-items:baseline; padding:8px 0;
+    border-bottom:1px solid var(--line); font-size:14.5px;
+  }
+  .log-line:last-child{border-bottom:none;}
+  .log-line .who{font-weight:600;}
+  .log-line .when{color:var(--muted); font-size:12.5px; margin-left:auto;}
+  .reveal-answer{font-size:28px; font-weight:700; margin-top:10px;}
+  .side-by-side{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;}
+  .side-by-side .box{border-radius:10px; padding:14px; font-size:14px;}
+  .hint{font-size:13px; color:var(--muted); margin-top:8px;}
+  .otp-note{background:#eff6ff; border-color:#bfdbfe;}
+  .play-card{text-align:center;}
+  .narration{min-height:20px; font-size:14px; color:var(--accent); margin-top:10px; font-weight:500;}
+  .trace{margin-top:10px; display:flex; flex-direction:column; gap:4px;}
+  .trace-line{font-size:13.5px; color:#475569; background:#f8fafc; border-radius:6px; padding:6px 10px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>RTASA — plain-English walkthrough</h1>
+    <button class="reset" onclick="location.reload()">Start over</button>
+  </header>
+
+  <div class="card otp-note">
+    <strong>🔐 About the codes you'll see ("OTP")</strong>
+    <p class="lede" style="margin:8px 0 0;">OTP = One-Time Password — a 6-digit code that changes every 30 seconds, the same idea as a banking app's login code. Every action below fetches a fresh one automatically and uses it to prove "this is really Owner / Custodian 1 / etc., right now" — on top of their password. The actual code is shown every time it's used, below.</p>
+  </div>
+
+  <div class="card play-card">
+    <button class="primary" id="btn-play-all" onclick="playAll()">▶ Watch the whole thing run automatically</button>
+    <p class="hint" style="text-align:center;margin:10px 0 0;">Or go step-by-step yourself below — every button is real, nothing is pre-recorded.</p>
+    <div id="narration" class="narration">Click "Set up everyone" below, or press ▶ above to watch it all happen on its own.</div>
+  </div>
+
+  <div class="steps">
+    <div class="step-dot" id="dot-1">1 · People</div>
+    <div class="step-dot" id="dot-2">2 · Lock it</div>
+    <div class="step-dot" id="dot-3">3 · Unlock it</div>
+    <div class="step-dot" id="dot-4">4 · Prove it's honest</div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="card" id="card-1">
+    <h2>Step 1 — Create the people involved</h2>
+    <p class="lede">One owner of the secret, three trusted custodians who will each hold a piece of the key, and one requester who will ask to see the secret later. Each gets their own password and security code — nothing is shared between them.</p>
+    <button class="primary" id="btn-setup" onclick="setupPeople()">Set up everyone</button>
+    <div class="trace" id="trace-1"></div>
+    <div id="msg-1"></div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="card" id="card-2" style="display:none">
+    <h2>Step 2 — Lock up a secret</h2>
+    <p class="lede">Write anything you like below. When you click the button: it gets encrypted, the encryption key gets split into 3 pieces (any 2 will be enough later), and each piece gets hidden inside an ordinary-looking image.</p>
+    <textarea id="secret-text">This patient's diagnosis must stay confidential until two of the three reviewing doctors approve its release.</textarea>
+    <div style="height:12px"></div>
+    <button class="primary" id="btn-issue" onclick="issueRecord()">Encrypt it, split the key, hide the pieces</button>
+    <div class="trace" id="trace-2"></div>
+    <div id="msg-2"></div>
+    <div class="gallery" id="gallery" style="display:none"></div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="card" id="card-3" style="display:none">
+    <h2>Step 3 — Ask permission to unlock it</h2>
+    <p class="lede">The requester asks to see the secret. Nothing happens until at least 2 of the 3 custodians agree — click "Approve" for each one to simulate them agreeing.</p>
+    <button class="primary" id="btn-request" onclick="requestRecovery()">Request to unlock</button>
+    <div class="trace" id="trace-3"></div>
+    <div id="msg-3a"></div>
+    <div class="approvers" id="approvers" style="display:none"></div>
+    <div class="progress-bar" id="progress-wrap" style="display:none"><div class="progress-fill" id="progress-fill"></div></div>
+    <div id="progress-text" class="hint" style="display:none"></div>
+    <div style="height:10px"></div>
+    <button class="primary" id="btn-recover" style="display:none" onclick="doRecover()">Reveal the secret</button>
+    <div id="msg-3b"></div>
+    <div id="revealed" class="reveal-answer" style="display:none"></div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="card" id="card-4" style="display:none">
+    <h2>Step 4 — Prove the history can't be secretly changed</h2>
+    <p class="lede">Every action above was written into a tamper-evident log. First let's look at it, then prove it's genuinely tamper-evident — not just "trust me."</p>
+    <button class="primary" id="btn-log" onclick="showLog()">Show what was recorded</button>
+    <div class="trace" id="trace-4"></div>
+    <div id="log-list"></div>
+    <div style="height:10px"></div>
+    <button class="primary" id="btn-verify" style="display:none" onclick="verifyLog()">Verify nothing was changed</button>
+    <div id="msg-4a"></div>
+    <div style="height:10px"></div>
+    <button class="primary" id="btn-tamper" style="display:none" onclick="tamperDemo()">Now try to secretly edit it</button>
+    <div id="msg-4b"></div>
+    <div class="side-by-side" id="side-by-side" style="display:none"></div>
+  </div>
+
+  <div class="card" id="card-done" style="display:none">
+    <h2>That's the whole system.</h2>
+    <p class="lede">Encryption, a threshold of people who must agree, keys hidden in plain sight, and a history that can't be quietly rewritten — all four working together, for real, against the real backend running on this machine. Click "Start over" above to run it again.</p>
+  </div>
+</div>
+
+<script>
+const API = ""; // same-origin
+const PASS = { owner: "owner-passphrase-1", c1: "custodian-passphrase-1", c2: "custodian-passphrase-2", c3: "custodian-passphrase-3", requester: "requester-passphrase-1" };
+let recordId = null, requestId = null, approvedCount = 0;
+
+function b64enc(str){ return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (m,p)=>String.fromCharCode('0x'+p))); }
+function b64dec(str){ return decodeURIComponent(atob(str).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')); }
+
+async function call(method, path, body){
+  const res = await fetch(API + path, {
+    method, headers: body ? {"Content-Type":"application/json"} : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  let data = null;
+  try { data = await res.json(); } catch(e) {}
+  if(!res.ok && res.status !== 409) throw new Error((data && data.detail) ? data.detail : (res.status + " " + res.statusText));
+  return data;
+}
+
+function setDot(n, state){ document.getElementById("dot-"+n).className = "step-dot " + state; }
+function showMsg(id, kind, text){
+  const el = document.getElementById(id);
+  el.innerHTML = `<div class="msg ${kind}">${text}</div>`;
+}
+
+async function freshOtp(roleId, cardNum, label){
+  const r = await call("GET", `/roles/${roleId}/otp`);
+  if(cardNum) trace(cardNum, `${label || roleId}'s one-time code right now: ${r.otp} (expires in 30s) — proves it's really them.`);
+  return r.otp;
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+function trace(cardNum, line){
+  const el = document.getElementById("trace-"+cardNum);
+  if(!el) return;
+  const p = document.createElement("div");
+  p.className = "trace-line";
+  p.textContent = "→ " + line;
+  el.appendChild(p);
+}
+function narrate(text){
+  const el = document.getElementById("narration");
+  if(el) el.textContent = text;
+}
+
+// ---- STEP 1 ----
+async function setupPeople(){
+  const btn = document.getElementById("btn-setup");
+  btn.disabled = true; btn.textContent = "Setting up…";
+  narrate("Right now: creating 5 accounts on the real backend — Owner, 3 custodians, and a requester.");
+  showMsg("msg-1", "wait", "Creating 5 roles, each with their own password and TOTP security code…");
+  try{
+    const roles = [
+      {role_id:"owner", display_name:"Record Owner", passphrase:PASS.owner, is_custodian:false},
+      {role_id:"custodian_1", display_name:"Custodian 1", passphrase:PASS.c1, is_custodian:true, evaluation_point:1},
+      {role_id:"custodian_2", display_name:"Custodian 2", passphrase:PASS.c2, is_custodian:true, evaluation_point:2},
+      {role_id:"custodian_3", display_name:"Custodian 3", passphrase:PASS.c3, is_custodian:true, evaluation_point:3},
+      {role_id:"requester", display_name:"Requester", passphrase:PASS.requester, is_custodian:false},
+    ];
+    for(const r of roles){
+      trace(1, `Creating ${r.display_name} — sets a password (and, for custodians, a secret-sharing point) only they know.`);
+      await call("POST", "/roles", r);
+    }
+    showMsg("msg-1", "good", "✓ 5 people created — Owner, 3 custodians, and a requester. Each one really did get its own password and security code on the real backend.");
+    setDot(1, "done");
+    btn.textContent = "✓ Done";
+    document.getElementById("card-2").style.display = "block";
+  }catch(e){
+    showMsg("msg-1", "bad", "Something went wrong: " + e.message);
+    btn.disabled = false; btn.textContent = "Set up everyone";
+  }
+}
+
+// ---- STEP 2 ----
+async function issueRecord(){
+  setDot(2, "active");
+  const btn = document.getElementById("btn-issue");
+  btn.disabled = true; btn.textContent = "Encrypting, splitting, hiding…";
+  narrate("Right now: encrypting your text, splitting the key, hiding the pieces in images.");
+  showMsg("msg-2", "wait", "Encrypting your text, splitting the key into 3 pieces, hiding each piece inside an image…");
+  try{
+    recordId = "demo-" + Date.now();
+    const otp = await freshOtp("owner", 2, "Owner");
+    trace(2, "Encrypting your text with AES-256 — a tamper-proof lock that also detects if even one letter changes later.");
+    trace(2, "Splitting the encryption key into 3 pieces (Shamir's Secret Sharing) — any 2 rebuild it, 1 alone reveals nothing.");
+    trace(2, "Hiding each piece inside an ordinary-looking image (steganography) — changing pixels so slightly it's invisible.");
+    const body = {
+      owner_role_id: "owner", owner_passphrase: PASS.owner, owner_otp: otp,
+      record_id: recordId,
+      message_base64: b64enc(document.getElementById("secret-text").value || "Hello, RTASA."),
+      custodian_role_ids: ["custodian_1","custodian_2","custodian_3"],
+      threshold: 2,
+      entitled_requesters: ["requester"],
+    };
+    await call("POST", "/records/issue", body);
+    showMsg("msg-2", "good", "✓ Locked. The key needs any 2 of these 3 people to agree before it can be rebuilt. Below are the three real images — one piece is genuinely hidden inside each.");
+    const gallery = document.getElementById("gallery");
+    gallery.style.display = "grid";
+    gallery.innerHTML = ["custodian_1","custodian_2","custodian_3"].map(rid =>
+      `<figure><img src="/records/${recordId}/carrier/${rid}"><figcaption>${rid}'s hidden key piece</figcaption></figure>`
+    ).join("");
+    setDot(2, "done");
+    btn.textContent = "✓ Done";
+    document.getElementById("card-3").style.display = "block";
+  }catch(e){
+    showMsg("msg-2", "bad", "Something went wrong: " + e.message);
+    btn.disabled = false; btn.textContent = "Encrypt it, split the key, hide the pieces";
+  }
+}
+
+// ---- STEP 3 ----
+async function requestRecovery(){
+  setDot(3, "active");
+  const btn = document.getElementById("btn-request");
+  btn.disabled = true; btn.textContent = "Requesting…";
+  narrate("Right now: the requester is asking permission to unlock the secret.");
+  try{
+    requestId = "req-" + Date.now();
+    const otp = await freshOtp("requester", 3, "Requester");
+    trace(3, "Sending the unlock request to the server — it now waits for at least 2 custodians to approve.");
+    await call("POST", "/recovery/request", {
+      request_id: requestId, record_id: recordId,
+      requester_role_id: "requester", requester_passphrase: PASS.requester, requester_otp: otp,
+    });
+    showMsg("msg-3a", "good", "✓ Request sent. Now click Approve for at least 2 of the 3 custodians below.");
+    btn.textContent = "✓ Requested";
+    const wrap = document.getElementById("approvers");
+    wrap.style.display = "flex";
+    wrap.innerHTML = ["custodian_1","custodian_2","custodian_3"].map(rid =>
+      `<div class="approver-row" id="row-${rid}">
+         <span>${rid}</span>
+         <button class="secondary" id="btn-${rid}" onclick="approveAs('${rid}', this)">Approve</button>
+       </div>`
+    ).join("");
+    document.getElementById("progress-wrap").style.display = "block";
+    document.getElementById("progress-text").style.display = "block";
+    updateProgress();
+  }catch(e){
+    showMsg("msg-3a", "bad", "Something went wrong: " + e.message);
+    btn.disabled = false; btn.textContent = "Request to unlock";
+  }
+}
+
+function updateProgress(){
+  const pct = Math.min(100, (approvedCount/2)*100);
+  document.getElementById("progress-fill").style.width = pct + "%";
+  document.getElementById("progress-text").textContent =
+    approvedCount >= 2 ? "✓ Threshold met — 2 of 2 needed custodians have approved." : `${approvedCount} of 2 needed custodians have approved.`;
+  if(approvedCount >= 2){
+    document.getElementById("btn-recover").style.display = "block";
+  }
+}
+
+async function approveAs(rid, btnEl){
+  const passMap = {custodian_1:PASS.c1, custodian_2:PASS.c2, custodian_3:PASS.c3};
+  btnEl.disabled = true; btnEl.textContent = "Approving…";
+  narrate(`Right now: ${rid} is approving — their hidden key piece is pulled out of their image.`);
+  try{
+    const otp = await freshOtp(rid, 3, rid);
+    trace(3, `${rid} approves — extracting their key piece from the hidden image.`);
+    await call("POST", "/recovery/approve", {
+      request_id: requestId, custodian_role_id: rid,
+      custodian_passphrase: passMap[rid], custodian_otp: otp,
+    });
+    btnEl.textContent = "✓ Approved";
+    document.getElementById("row-"+rid).classList.add("approved");
+    approvedCount++;
+    updateProgress();
+  }catch(e){
+    btnEl.disabled = false; btnEl.textContent = "Approve";
+    showMsg("msg-3a", "bad", "Approval failed: " + e.message);
+  }
+}
+
+async function doRecover(){
+  const btn = document.getElementById("btn-recover");
+  btn.disabled = true; btn.textContent = "Rebuilding the key and decrypting…";
+  narrate("Right now: combining the 2 approved key pieces and decrypting the secret.");
+  try{
+    const otp = await freshOtp("requester", 3, "Requester");
+    trace(3, "Threshold met (2 of 3) — combining the pieces to rebuild the original key (Lagrange interpolation).");
+    trace(3, "Decrypting your text with the rebuilt key and checking the tamper-proof tag matches.");
+    const result = await call("POST", "/recovery/recover", {
+      request_id: requestId, requester_passphrase: PASS.requester, requester_otp: otp,
+    });
+    const text = b64dec(result.message_base64);
+    showMsg("msg-3b", "good", "✓ The key pieces were pulled out of their hidden images, verified, combined, and used to decrypt — all just now.");
+    const revealed = document.getElementById("revealed");
+    revealed.style.display = "block";
+    revealed.textContent = "“" + text + "”";
+    setDot(3, "done");
+    btn.textContent = "✓ Revealed";
+    document.getElementById("card-4").style.display = "block";
+  }catch(e){
+    showMsg("msg-3b", "bad", "Something went wrong: " + e.message);
+    btn.disabled = false; btn.textContent = "Reveal the secret";
+  }
+}
+
+// ---- STEP 4 ----
+async function showLog(){
+  setDot(4, "active");
+  const btn = document.getElementById("btn-log");
+  btn.disabled = true; btn.textContent = "Loading…";
+  narrate("Right now: pulling the tamper-evident log of everything that just happened.");
+  try{
+    const log = await call("GET", "/audit/log");
+    trace(4, `Fetched ${log.length} log entries — each one is signed and chained to the one before it.`);
+    const friendly = {
+      "role_created": (a)=>`${a} was created`,
+      "record_issued": (a)=>`${a} locked up a new secret`,
+      "recovery_requested": (a)=>`${a} asked to unlock it`,
+      "share_approved": (a)=>`${a} approved the request`,
+      "record_recovered": (a)=>`${a} successfully unlocked it`,
+    };
+    const list = document.getElementById("log-list");
+    list.innerHTML = log.map(e => {
+      const label = (friendly[e.event_type] || ((a)=>`${a} — ${e.event_type}`))(e.actor_id);
+      const when = new Date(e.timestamp*1000).toLocaleTimeString();
+      return `<div class="log-line"><span>#${e.seq}</span><span class="who">${label}</span><span class="when">${when}</span></div>`;
+    }).join("");
+    btn.textContent = "✓ Shown";
+    document.getElementById("btn-verify").style.display = "block";
+  }catch(e){
+    showMsg("msg-4a", "bad", "Something went wrong: " + e.message);
+    btn.disabled = false; btn.textContent = "Show what was recorded";
+  }
+}
+
+async function verifyLog(){
+  const btn = document.getElementById("btn-verify");
+  btn.disabled = true; btn.textContent = "Checking every signature and link…";
+  narrate("Right now: checking every entry's digital signature and the chain linking them together.");
+  try{
+    trace(4, "Re-checking each entry's signature, plus the hash link to the entry before it — any edit breaks the chain.");
+    const result = await call("GET", "/audit/verify");
+    if(result.ok){
+      showMsg("msg-4a", "good", "✓ Verified — every entry's signature checks out and the chain is unbroken. Nothing has been secretly changed.");
+    } else {
+      showMsg("msg-4a", "bad", "Problems found: " + JSON.stringify(result.problems));
+    }
+    btn.textContent = "✓ Verified";
+    document.getElementById("btn-tamper").style.display = "block";
+  }catch(e){
+    showMsg("msg-4a", "bad", "Something went wrong: " + e.message);
+    btn.disabled = false; btn.textContent = "Verify nothing was changed";
+  }
+}
+
+async function tamperDemo(){
+  const btn = document.getElementById("btn-tamper");
+  btn.disabled = true; btn.textContent = "Simulating an attacker editing the log…";
+  narrate("Right now: making a scratch copy of the log, secretly editing one entry, and checking if it's caught.");
+  try{
+    trace(4, "Copying the log, quietly changing one field in one entry, then running the same check again on the copy.");
+    const result = await call("POST", "/audit/tamper-demo");
+    const box = document.getElementById("side-by-side");
+    box.style.display = "grid";
+    box.innerHTML = `
+      <div class="box msg good"><strong>Real log</strong><br>Verify result: ${result.clean_verify.ok ? "✓ clean" : "✗ problem"}</div>
+      <div class="box msg bad"><strong>Secretly edited copy</strong><br>Verify result: ${result.tampered_verify.ok ? "✓ clean (not caught!)" : "✗ caught immediately"}</div>
+    `;
+    showMsg("msg-4b", result.tampered_verify.ok ? "bad" : "good",
+      result.tampered_verify.ok
+        ? "Unexpected — the tampering was not caught."
+        : "✓ The edit was caught instantly. Nothing about your real log was touched — this tested a scratch copy.");
+    btn.textContent = "✓ Tried";
+    setDot(4, "done");
+    document.getElementById("card-done").style.display = "block";
+  }catch(e){
+    showMsg("msg-4b", "bad", "Something went wrong: " + e.message);
+    btn.disabled = false; btn.textContent = "Now try to secretly edit it";
+  }
+}
+
+async function playAll(){
+  const playBtn = document.getElementById("btn-play-all");
+  playBtn.disabled = true; playBtn.textContent = "Playing the full demo…";
+  try{
+    await setupPeople();      await sleep(1000);
+    await issueRecord();      await sleep(1000);
+    await requestRecovery();  await sleep(800);
+    for(const rid of ["custodian_1","custodian_2","custodian_3"]){
+      if(approvedCount >= 2) break;
+      await approveAs(rid, document.getElementById("btn-"+rid));
+      await sleep(700);
+    }
+    await sleep(500);
+    await doRecover();        await sleep(1000);
+    await showLog();          await sleep(800);
+    await verifyLog();        await sleep(800);
+    await tamperDemo();
+    narrate("Done — that's the entire system, start to finish, against the real backend above. Click \"Start over\" to run it again.");
+    playBtn.textContent = "✓ Full demo complete — click \"Start over\" to run again";
+  }catch(e){
+    narrate("Stopped — something went wrong: " + e.message);
+    playBtn.disabled = false; playBtn.textContent = "▶ Watch the whole thing run automatically";
+  }
+}
+
+setDot(1, "active");
+</script>
+</body>
+</html>

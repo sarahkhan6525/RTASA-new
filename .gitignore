@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+rtasa.db
+demo_ui*.db
+carrier_output/
+carriers/generated/
+.DS_Store
+
+# Enterprise security hardening (rtasa/secrets_vault.py, app/security_config.py):
+# the dev-convenience master key and the security-event log must never be committed
+.rtasa_master.key
+.rtasa_session_secret
+security_events.log
+
+# Real SMTP credentials for the email-OTP login flow (app/email_otp.py) --
+# copy .env.example to .env and fill it in locally, never commit .env itself
+.env
+
+# Frontend build output and dependencies
+frontend/node_modules/
+frontend/dist/
+
+# Scratch logs from local dev runs
+*.log

@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTASA -- Demo Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b8cff'/%3E%3Ctext x='16' y='23' font-family='Arial,sans-serif' font-size='18' font-weight='bold' fill='white' text-anchor='middle'%3ER%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0a0e1f; --panel:#121a33; --panel2:#161f3d; --border:#263156;
+    --text:#eef1fa; --muted:#90a0c6; --accent:#5b8cff; --accent2:#7ee0c0;
+    --ok:#30d17a; --bad:#ff5c7a; --warn:#f5b545;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --shadow: 0 10px 30px -12px rgba(0,0,0,0.55);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:
+      radial-gradient(900px 500px at 85% -8%, rgba(126,224,192,0.08) 0%, transparent 60%),
+      radial-gradient(1200px 600px at 8% -10%, #192350 0%, var(--bg) 55%);
+    color:var(--text); min-height:100vh; font-size:14.5px; line-height:1.45;
+  }
+  header{
+    padding:20px 28px 0; border-bottom:1px solid var(--border);
+    background:rgba(9,12,26,0.72); position:sticky; top:0; z-index:30; backdrop-filter:blur(10px);
+  }
+  .header-top{display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap;}
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand .mark{
+    width:40px; height:40px; border-radius:11px; flex:none;
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    display:flex; align-items:center; justify-content:center; font-weight:800; color:#0a0e1f; font-size:15px;
+    box-shadow:0 6px 18px -4px rgba(91,140,255,0.55);
+  }
+  h1{margin:0; font-size:21px; letter-spacing:0.2px; font-weight:700;}
+  h1 .full{color:var(--muted); font-weight:400; font-size:12.5px; display:block; margin-top:2px; max-width:560px;}
+  .header-actions{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .layers{display:flex; gap:7px; margin-top:14px; flex-wrap:wrap;}
+  .layer-chip{
+    font-family:var(--mono); font-size:10.5px; padding:5px 9px; border-radius:999px;
+    border:1px solid var(--border); background:var(--panel2); color:var(--accent2);
+    cursor:default; letter-spacing:.02em;
+  }
+  .layer-chip b{color:#fff;}
+
+  nav{display:flex; gap:4px; margin-top:16px; flex-wrap:wrap;}
+  nav button{
+    background:transparent; border:1px solid var(--border); color:var(--muted);
+    padding:10px 16px 9px; border-radius:10px 10px 0 0; font-size:13.5px; cursor:pointer;
+    border-bottom:none; position:relative; top:1px; display:flex; align-items:center; gap:8px;
+    transition:color .15s, background .15s;
+  }
+  nav button:hover{color:var(--text);}
+  nav button.active{background:var(--panel); color:#fff; border-color:var(--border); font-weight:600;}
+  .step-dot{
+    width:18px; height:18px; border-radius:50%; background:var(--panel2); border:1px solid var(--border);
+    display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:var(--muted);
+    transition:all .25s;
+  }
+  nav button.done .step-dot{background:var(--ok); border-color:var(--ok); color:#06240f;}
+  nav button.active .step-dot{border-color:var(--accent); color:var(--accent2);}
+
+  #demo-caption{
+    display:none; position:sticky; top:0; z-index:25; margin:0; padding:11px 28px;
+    background:linear-gradient(90deg, rgba(91,140,255,0.18), rgba(126,224,192,0.12));
+    border-bottom:1px solid var(--border); color:#dbe6ff; font-size:13.5px; font-weight:600;
+    align-items:center; gap:10px;
+  }
+  #demo-caption.show{display:flex;}
+  .spinner{
+    width:14px; height:14px; border-radius:50%; border:2px solid rgba(255,255,255,0.25);
+    border-top-color:#fff; animation:spin .7s linear infinite; flex:none;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  main{max-width:1080px; margin:0 auto; padding:22px 28px 90px;}
+  .panel{display:none; animation:fade .18s ease-in;}
+  .panel.active{display:block;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:20px 22px; margin-bottom:16px; box-shadow:var(--shadow);
+  }
+  .card h2{margin:0 0 4px; font-size:16px; display:flex; align-items:center;}
+  .card .hint{color:var(--muted); font-size:12.8px; margin:0 0 16px; line-height:1.55;}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .grid.full, .field.full{grid-column:1 / -1;}
+  label{display:block; font-size:11.5px; color:var(--muted); margin-bottom:5px; font-weight:600; text-transform:uppercase; letter-spacing:.03em;}
+  input[type=text], input[type=number], input[type=password], textarea, select{
+    width:100%; background:#0d1430; border:1px solid var(--border); color:var(--text);
+    padding:9px 10px; border-radius:8px; font-size:13.5px; font-family:inherit;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus, select:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(91,140,255,0.18);}
+  textarea{font-family:var(--mono); min-height:64px; resize:vertical;}
+  .field{margin-bottom:12px;}
+  .row-inline{display:flex; gap:8px; align-items:center;}
+  .row-inline input{flex:1;}
+
+  button.btn{
+    background:var(--accent); color:#fff; border:none; border-radius:9px;
+    padding:9px 16px; font-size:13.5px; font-weight:600; cursor:pointer;
+    transition:filter .12s, transform .08s;
+  }
+  button.btn.secondary{background:var(--panel2); color:var(--accent2); border:1px solid var(--border);}
+  button.btn.ghost{background:transparent; border:1px solid var(--border); color:var(--muted); padding:6px 10px; font-weight:500; font-size:12.5px;}
+  button.btn.danger{background:var(--bad);}
+  button.btn.hero{
+    background:linear-gradient(135deg, var(--accent), #8a6bff);
+    padding:11px 20px; font-size:14px; box-shadow:0 8px 22px -6px rgba(91,140,255,0.6);
+  }
+  button.btn:disabled{opacity:0.4; cursor:not-allowed;}
+  button.btn:not(:disabled):hover{filter:brightness(1.1);}
+  button.btn:not(:disabled):active{transform:scale(0.97);}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:6px 8px; border-bottom:1px solid var(--border);}
+  td{padding:7px 8px; border-bottom:1px solid #1c2748; vertical-align:middle;}
+  .mono{font-family:var(--mono); font-size:12.5px;}
+  .pill{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-family:var(--mono);}
+  .pill.custodian{background:#241a44; color:#c9a8ff;}
+  .pill.plain{background:#13284a; color:#8fc2ff;}
+  .checklist{display:flex; flex-direction:column; gap:6px; max-height:160px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:8px;}
+  .checklist label{display:flex; align-items:center; gap:8px; color:var(--text); font-size:13px; margin:0; text-transform:none; font-weight:400;}
+  .checklist input[type=checkbox]{width:auto;}
+
+  .status{padding:10px 12px; border-radius:9px; font-size:13px; margin-top:10px; display:none; align-items:center; gap:8px;}
+  .status.ok{display:flex; background:rgba(48,209,122,0.12); border:1px solid rgba(48,209,122,0.35); color:var(--ok);}
+  .status.err{display:flex; background:rgba(255,92,122,0.12); border:1px solid rgba(255,92,122,0.35); color:var(--bad);}
+  .status.info{display:flex; background:rgba(91,140,255,0.12); border:1px solid rgba(91,140,255,0.35); color:#a9c2ff;}
+
+  details.tech{margin-top:12px; border:1px solid var(--border); border-radius:9px; background:#0d1430; overflow:hidden;}
+  details.tech summary{
+    cursor:pointer; padding:9px 12px; font-size:12px; color:var(--accent2); font-weight:600;
+    list-style:none; display:flex; align-items:center; gap:6px; user-select:none;
+  }
+  details.tech summary::-webkit-details-marker{display:none;}
+  details.tech summary:before{content:"▸"; transition:transform .15s;}
+  details.tech[open] summary:before{transform:rotate(90deg);}
+  details.tech .tech-body{padding:0 12px 12px; font-family:var(--mono); font-size:11.5px; color:var(--accent2); word-break:break-all; max-height:140px; overflow:auto;}
+
+  .gallery{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:14px; margin-top:14px;}
+  .gallery figure{margin:0; background:#0d1430; border:1px solid var(--border); border-radius:10px; padding:8px; text-align:center;}
+  .gallery img{width:100%; border-radius:6px; display:block; image-rendering:pixelated; border:1px solid #1c2748;}
+  .gallery figcaption{font-size:11px; color:var(--muted); margin-top:6px; font-family:var(--mono);}
+
+  .badge-step{display:inline-flex; align-items:center; justify-content:center; width:21px; height:21px; border-radius:50%; background:var(--panel2); color:var(--accent2); font-size:11px; font-weight:700; margin-right:9px; flex:none;}
+  .progress-wrap{background:#0d1430; border-radius:999px; height:9px; overflow:hidden; border:1px solid var(--border); margin:8px 0;}
+  .progress-bar{height:100%; background:linear-gradient(90deg, var(--accent), var(--accent2)); width:0%; transition:width .4s ease;}
+
+  .result-box{background:#0d1430; border:1px solid var(--ok); border-radius:12px; padding:18px; margin-top:14px;}
+  .result-box label{color:var(--ok); margin-bottom:8px;}
+  .result-box .msg{font-size:17px; font-weight:600; color:#fff; word-break:break-word; line-height:1.5;}
+
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .verify-card{border-radius:10px; padding:14px; border:1px solid var(--border);}
+  .verify-card.good{border-color:rgba(48,209,122,0.45); background:rgba(48,209,122,0.07);}
+  .verify-card.bad{border-color:rgba(255,92,122,0.45); background:rgba(255,92,122,0.07);}
+  .verify-card h3{margin:0 0 8px; font-size:13px;}
+  .verify-card .big-mark{font-size:22px; margin-right:6px;}
+
+  .footnote{font-size:11.5px; color:var(--muted); margin-top:10px; line-height:1.55;}
+  .paper-ref{color:var(--accent2); font-family:var(--mono); font-size:11px;}
+  code{font-family:var(--mono); background:#0d1430; padding:1px 5px; border-radius:4px; font-size:12px;}
+
+  .finale-banner{
+    display:none; margin-top:10px; padding:16px 18px; border-radius:12px;
+    background:linear-gradient(120deg, rgba(48,209,122,0.16), rgba(91,140,255,0.14));
+    border:1px solid rgba(48,209,122,0.4); font-size:14px; font-weight:600; color:#eafff3;
+  }
+  .finale-banner.show{display:block;}
+
+  @keyframes revealPop{
+    0%{opacity:0; transform:translateY(10px) scale(.97);}
+    60%{opacity:1;}
+    100%{opacity:1; transform:translateY(0) scale(1);}
+  }
+  .reveal{animation:revealPop .45s cubic-bezier(.2,.8,.3,1);}
+
+  @keyframes glowPulse{
+    0%{box-shadow:0 0 0 0 rgba(48,209,122,0.45);}
+    70%{box-shadow:0 0 0 14px rgba(48,209,122,0);}
+    100%{box-shadow:0 0 0 0 rgba(48,209,122,0);}
+  }
+  .glow-pulse{animation:glowPulse 1.1s ease-out;}
+
+  .switch{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer; user-select:none;}
+  .switch input{display:none;}
+  .switch .track{width:34px; height:19px; border-radius:999px; background:var(--panel2); border:1px solid var(--border); position:relative; transition:background .15s;}
+  .switch .track:after{content:""; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:var(--muted); transition:all .18s;}
+  .switch input:checked + .track{background:rgba(91,140,255,0.35); border-color:var(--accent);}
+  .switch input:checked + .track:after{left:17px; background:var(--accent2);}
+
+  @media (max-width:720px){
+    .grid, .two-col{grid-template-columns:1fr;}
+    header{padding:16px 16px 0;} main{padding:16px 16px 70px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <div class="brand">
+      <div class="mark">R</div>
+      <h1>RTASA <span class="full">Role-Based Threshold-Access Hybrid Encryption and Steganography with Tamper-Evident Audit Trails -- live demo console</span></h1>
+    </div>
+    <div class="header-actions">
+      <label class="switch" title="Collapse technical detail by default for a cleaner on-screen look">
+        <input type="checkbox" id="presenter-toggle" checked>
+        <span class="track"></span> Clean presentation view
+      </label>
+      <button class="btn secondary" id="reset-demo-btn">Reset demo</button>
+      <button class="btn hero" id="auto-demo-btn">▶ Run full automated demo</button>
+    </div>
+  </div>
+  <div class="layers">
+    <span class="layer-chip"><b>E</b> AES-256-GCM (eq. 2)</span>
+    <span class="layer-chip"><b>A</b> RSA-OAEP share wrap (eq. 5)</span>
+    <span class="layer-chip"><b>T</b> Feldman-Shamir (k,n) (eq. 3,4,9)</span>
+    <span class="layer-chip"><b>S</b> LSB-matching stego (eq. 6)</span>
+    <span class="layer-chip"><b>L</b> signed hash-chained log (eq. 7)</span>
+  </div>
+  <nav>
+    <button data-tab="roles" class="active"><span class="step-dot">1</span>Roles</button>
+    <button data-tab="issue"><span class="step-dot">2</span>Issue a Record</button>
+    <button data-tab="recovery"><span class="step-dot">3</span>Recover</button>
+    <button data-tab="audit"><span class="step-dot">4</span>Audit &amp; Tamper Demo</button>
+  </nav>
+</header>
+
+<div id="demo-caption"><span class="spinner"></span><span id="demo-caption-text"></span></div>
+
+<main>
+
+  <!-- ===================== ROLES ===================== -->
+  <section class="panel active" id="panel-roles">
+    <div class="card">
+      <h2><span class="badge-step">1</span>Set up roles</h2>
+      <p class="hint">A data owner, a set of custodians (each holding one Shamir share, x<sub>i</sub> = their evaluation point), and a requester -- exactly the role model Sec. IV-A defines. Use quick-start for a one-click (2,3) demo setup, or add roles one at a time below.</p>
+      <button class="btn secondary" id="quickstart-btn">Quick-start: owner + 3 custodians + requester</button>
+      <div class="status" id="roles-status"></div>
+    </div>
+
+    <div class="card">
+      <h2>Add a role</h2>
+      <div class="grid">
+        <div class="field"><label>Role ID</label><input type="text" id="r-role-id" placeholder="e.g. custodian_4"></div>
+        <div class="field"><label>Display name</label><input type="text" id="r-display-name" placeholder="e.g. Custodian 4"></div>
+        <div class="field"><label>Passphrase (min 6 chars)</label><input type="text" id="r-passphrase" value="demo-passphrase-123"></div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);text-transform:none;font-weight:400;">
+            <input type="checkbox" id="r-is-custodian" style="width:auto;"> Is a custodian (holds a Shamir share)
+          </label>
+        </div>
+        <div class="field" id="r-eval-point-wrap" style="display:none;">
+          <label>Evaluation point x_i (unique, &gt; 0)</label>
+          <input type="number" id="r-eval-point" min="1" value="1">
+        </div>
+      </div>
+      <button class="btn" id="create-role-btn">Create role</button>
+    </div>
+
+    <div class="card">
+      <h2>Current roles</h2>
+      <table>
+        <thead><tr><th>Role ID</th><th>Display name</th><th>Type</th><th>OTP</th></tr></thead>
+        <tbody id="roles-table"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== ISSUE ===================== -->
+  <section class="panel" id="panel-issue">
+    <div class="card">
+      <h2><span class="badge-step">2</span>Issue a record</h2>
+      <p class="hint">Encrypts the message (E), splits the session key k-of-n with Feldman commitments (T), wraps each share under its custodian's key (A), and embeds each wrapped share into a cover image (S) -- all in one call to <code>POST /records/issue</code>, exactly Fig. 1's issuance pipeline (Sec. IV-B).</p>
+      <div class="grid">
+        <div class="field">
+          <label>Owner role</label>
+          <select id="i-owner"></select>
+        </div>
+        <div class="field">
+          <label>Owner passphrase</label>
+          <input type="text" id="i-owner-pass" value="demo-passphrase-123">
+        </div>
+        <div class="field">
+          <label>Owner OTP</label>
+          <div class="row-inline"><input type="text" id="i-owner-otp"><button class="btn ghost" id="i-fetch-otp">Fetch</button></div>
+        </div>
+        <div class="field">
+          <label>Record ID</label>
+          <input type="text" id="i-record-id">
+        </div>
+        <div class="field full">
+          <label>Message to protect</label>
+          <textarea id="i-message">This is the confidential record RTASA protects -- visible only after k custodians approve recovery.</textarea>
+        </div>
+        <div class="field">
+          <label>Custodians (holders of a share)</label>
+          <div class="checklist" id="i-custodians"></div>
+        </div>
+        <div class="field">
+          <label>Threshold k</label>
+          <input type="number" id="i-threshold" min="1" value="2">
+          <label style="margin-top:10px;">Entitled requesters (policy check, Table III)</label>
+          <div class="checklist" id="i-requesters"></div>
+        </div>
+      </div>
+      <button class="btn" id="issue-btn">Issue record</button>
+      <div class="status" id="issue-status"></div>
+    </div>
+
+    <div class="card" id="issue-result-card" style="display:none;">
+      <h2>Issued record</h2>
+      <table>
+        <tr><td class="mono" style="color:var(--muted)">record_id</td><td class="mono" id="out-record-id"></td></tr>
+        <tr><td class="mono" style="color:var(--muted)">threshold (k)</td><td class="mono" id="out-threshold"></td></tr>
+        <tr><td class="mono" style="color:var(--muted)">custodians (n)</td><td class="mono" id="out-custodians"></td></tr>
+      </table>
+      <details class="tech" id="commit-details">
+        <summary>Feldman commitments (public, eq. 4) -- technical detail</summary>
+        <div class="tech-body" id="out-commitments"></div>
+      </details>
+
+      <label style="margin-top:16px;">Steganographic carriers (layer S)</label>
+      <p class="hint" style="margin-top:4px;">Each image below is an ordinary-looking cover with one custodian's wrapped share really embedded in its pixel LSBs. Nothing about the image looks different to the eye.</p>
+      <div class="gallery" id="out-gallery"></div>
+    </div>
+  </section>
+
+  <!-- ===================== RECOVERY ===================== -->
+  <section class="panel" id="panel-recovery">
+    <div class="card">
+      <h2><span class="badge-step">3</span>Start a recovery request</h2>
+      <p class="hint">Sec. IV-D: the requester's signed request passes a policy check (Table III: unentitled requesters are refused), then each approving custodian independently extracts, unwraps and Feldman-checks its own share before re-wrapping it for the requester.</p>
+      <div class="grid">
+        <div class="field"><label>Record ID</label><input type="text" id="rec-record-id"></div>
+        <div class="field"><label>Request ID</label><input type="text" id="rec-request-id"></div>
+        <div class="field"><label>Requester role</label><select id="rec-requester"></select></div>
+        <div class="field"><label>Requester passphrase</label><input type="text" id="rec-requester-pass" value="demo-passphrase-123"></div>
+        <div class="field full">
+          <label>Requester OTP</label>
+          <div class="row-inline"><input type="text" id="rec-requester-otp"><button class="btn ghost" id="rec-fetch-otp">Fetch</button></div>
+        </div>
+      </div>
+      <button class="btn" id="start-recovery-btn">Start recovery</button>
+      <div class="status" id="recovery-status"></div>
+    </div>
+
+    <div class="card" id="approvals-card" style="display:none;">
+      <h2>Custodian approvals</h2>
+      <div class="progress-wrap"><div class="progress-bar" id="approval-progress"></div></div>
+      <p class="hint" id="approval-count">0 of k approvals collected</p>
+      <div id="approval-rows"></div>
+    </div>
+
+    <div class="card" id="recover-card" style="display:none;">
+      <h2>Reconstruct and decrypt</h2>
+      <p class="hint">Once k shares are approved, Lagrange-interpolate K (eq. 9), derive k<sub>e</sub>, and let AES-GCM's own tag confirm integrity on decrypt.</p>
+      <button class="btn" id="recover-btn" disabled>Recover message</button>
+      <div class="status" id="recover-status"></div>
+      <div class="result-box" id="recover-result" style="display:none;">
+        <label>&#10003; Recovered message</label>
+        <div class="msg" id="recovered-message"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== AUDIT ===================== -->
+  <section class="panel" id="panel-audit">
+    <div class="card">
+      <h2><span class="badge-step">4</span>Audit log</h2>
+      <p class="hint">Every issuance, approval, recovery and refusal is appended as a signed, hash-chained entry (eq. 7). <span class="paper-ref">Table III / Table IV</span> reproduction.</p>
+      <button class="btn secondary" id="refresh-log-btn">Refresh log</button>
+      <button class="btn secondary" id="verify-log-btn">Verify log</button>
+      <div class="status" id="audit-status"></div>
+      <details class="tech" open id="audit-table-details" style="margin-top:14px;">
+        <summary>Log entries</summary>
+        <div class="tech-body" style="max-height:260px;">
+          <table>
+            <thead><tr><th>#</th><th>Event</th><th>Actor</th><th>Time</th><th>Entry hash</th></tr></thead>
+            <tbody id="audit-table"></tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Live tamper-detection demo</h2>
+      <p class="hint">Reproduces Table IV's "insider edits their own entry" row. This never touches your real log -- it verifies a scratch in-memory copy with one entry's data quietly edited, the way a log-host attacker without any signing key could try.</p>
+      <button class="btn danger" id="tamper-btn">Run tamper demo</button>
+      <div class="status" id="tamper-status"></div>
+      <div class="two-col" id="tamper-result" style="display:none; margin-top:14px;">
+        <div class="verify-card good" id="tamper-clean">
+          <h3><span class="big-mark">&#10003;</span>Clean log -- real verify()</h3>
+          <div id="tamper-clean-body"></div>
+        </div>
+        <div class="verify-card bad" id="tamper-tampered">
+          <h3><span class="big-mark">&#10007;</span>Tampered copy -- same verify()</h3>
+          <div id="tamper-tampered-body"></div>
+        </div>
+      </div>
+      <p class="footnote" id="tamper-explain"></p>
+    </div>
+
+    <div class="finale-banner" id="finale-banner">
+      &#127942; Full RTASA lifecycle completed on real cryptography: encrypted &amp; split (E/T), wrapped &amp; hidden in cover images (A/S), recovered by threshold approval, and tamper detection verified against the signed log (L).
+    </div>
+  </section>
+
+</main>
+
+<script>
+const API = ""; // same origin
+let state = { roles: [], lastRecord: null, recovered:false, tamperRun:false };
+
+// ---------- small helpers ----------
+function $(id){ return document.getElementById(id); }
+function setStatus(el, kind, text){ el.className = "status " + kind; el.textContent = text; }
+function clearStatus(el){ el.className = "status"; el.textContent = ""; }
+async function api(path, opts){
+  const res = await fetch(API + path, Object.assign({headers:{"Content-Type":"application/json"}}, opts));
+  let body = null;
+  try { body = await res.json(); } catch(e) {}
+  if (!res.ok) {
+    const msg = (body && body.detail) ? body.detail : (res.status + " " + res.statusText);
+    throw new Error(msg);
+  }
+  return body;
+}
+function randSuffix(){ return Math.random().toString(36).slice(2,7); }
+function fmtTime(ts){ return new Date(ts*1000).toLocaleTimeString(); }
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+function reveal(el){
+  el.classList.remove("reveal"); void el.offsetWidth; el.classList.add("reveal");
+}
+function glow(el){
+  el.classList.remove("glow-pulse"); void el.offsetWidth; el.classList.add("glow-pulse");
+}
+
+// ---------- presenter / clean view toggle ----------
+function applyPresenterMode(){
+  const clean = $("presenter-toggle").checked;
+  document.querySelectorAll("details.tech").forEach(d=>{
+    if (d.id === "audit-table-details") return; // keep log table open always, it's the main content there
+    d.open = !clean;
+  });
+}
+$("presenter-toggle").addEventListener("change", applyPresenterMode);
+
+// ---------- stepper ----------
+function updateStepper(){
+  const rolesDone = state.roles.some(r=>r.is_custodian) && state.roles.some(r=>!r.is_custodian);
+  const issueDone = !!state.lastRecord;
+  const recoverDone = state.recovered;
+  const auditDone = state.tamperRun;
+  const map = {roles:rolesDone, issue:issueDone, recovery:recoverDone, audit:auditDone};
+  document.querySelectorAll("nav button").forEach(btn=>{
+    btn.classList.toggle("done", !!map[btn.dataset.tab]);
+    const dot = btn.querySelector(".step-dot");
+    if (map[btn.dataset.tab]) dot.innerHTML = "&#10003;";
+  });
+}
+
+// ---------- tab switching ----------
+function showTab(tab){
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
+  document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+  $("panel-"+tab).classList.add("active");
+  if (tab === "issue") populateIssueSelectors();
+  if (tab === "recovery") populateRecoverySelectors();
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+document.querySelectorAll("nav button").forEach(btn=>{
+  btn.addEventListener("click", ()=>showTab(btn.dataset.tab));
+});
+
+function caption(text){
+  const el = $("demo-caption");
+  if (text === null){ el.classList.remove("show"); return; }
+  el.classList.add("show");
+  $("demo-caption-text").textContent = text;
+}
+
+// ---------- ROLES ----------
+$("r-is-custodian").addEventListener("change", e=>{
+  $("r-eval-point-wrap").style.display = e.target.checked ? "block" : "none";
+});
+
+async function refreshRoles(){
+  state.roles = await api("/roles");
+  const tbody = $("roles-table");
+  tbody.innerHTML = "";
+  state.roles.forEach(r=>{
+    const tr = document.createElement("tr");
+    const type = r.is_custodian ? `<span class="pill custodian">custodian x=${r.evaluation_point}</span>` : `<span class="pill plain">role</span>`;
+    tr.innerHTML = `<td class="mono">${r.role_id}</td><td>${r.display_name}</td><td>${type}</td>
+      <td><button class="btn ghost" data-role="${r.role_id}">Get OTP</button> <span class="mono" id="otp-${r.role_id}"></span></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll("button[data-role]").forEach(b=>{
+    b.addEventListener("click", async ()=>{
+      const data = await api(`/roles/${b.dataset.role}/otp`);
+      $("otp-"+b.dataset.role).textContent = data.otp;
+    });
+  });
+  updateStepper();
+}
+
+async function doCreateRole(body){
+  await api("/roles", {method:"POST", body: JSON.stringify(body)});
+  await refreshRoles();
+}
+
+$("create-role-btn").addEventListener("click", async ()=>{
+  const statusEl = $("roles-status");
+  try{
+    const body = {
+      role_id: $("r-role-id").value.trim(),
+      display_name: $("r-display-name").value.trim() || $("r-role-id").value.trim(),
+      passphrase: $("r-passphrase").value,
+      is_custodian: $("r-is-custodian").checked,
+      evaluation_point: $("r-is-custodian").checked ? parseInt($("r-eval-point").value, 10) : null,
+    };
+    if (!body.role_id) throw new Error("role_id is required");
+    await doCreateRole(body);
+    setStatus(statusEl, "ok", `Created role '${body.role_id}'.`);
+    $("r-role-id").value=""; $("r-display-name").value="";
+  }catch(e){ setStatus(statusEl, "err", e.message); }
+});
+
+const QUICKSTART_DEFS = [
+  {role_id:"owner", display_name:"Data Owner", passphrase:"demo-passphrase-123", is_custodian:false, evaluation_point:null},
+  {role_id:"custodian_1", display_name:"Custodian 1", passphrase:"demo-passphrase-123", is_custodian:true, evaluation_point:1},
+  {role_id:"custodian_2", display_name:"Custodian 2", passphrase:"demo-passphrase-123", is_custodian:true, evaluation_point:2},
+  {role_id:"custodian_3", display_name:"Custodian 3", passphrase:"demo-passphrase-123", is_custodian:true, evaluation_point:3},
+  {role_id:"requester_q", display_name:"Requester Q", passphrase:"demo-passphrase-123", is_custodian:false, evaluation_point:null},
+];
+
+async function doQuickstart(){
+  let created = 0, skipped = 0;
+  for (const d of QUICKSTART_DEFS){
+    try{ await api("/roles", {method:"POST", body: JSON.stringify(d)}); created++; }
+    catch(e){ skipped++; }
+  }
+  await refreshRoles();
+  return {created, skipped};
+}
+
+$("quickstart-btn").addEventListener("click", async ()=>{
+  const statusEl = $("roles-status");
+  setStatus(statusEl, "info", "Creating demo role set...");
+  const {created, skipped} = await doQuickstart();
+  setStatus(statusEl, "ok", `Done: ${created} role(s) created${skipped?`, ${skipped} already existed`:""}.`);
+  glow($("panel-roles").querySelector(".card:last-child"));
+});
+
+// ---------- ISSUE ----------
+function populateIssueSelectors(){
+  const ownerSel = $("i-owner");
+  const prevOwner = ownerSel.value;
+  ownerSel.innerHTML = state.roles.map(r=>`<option value="${r.role_id}">${r.role_id}</option>`).join("");
+  if (state.roles.some(r=>r.role_id===prevOwner)) ownerSel.value = prevOwner;
+  else if (state.roles.some(r=>r.role_id==="owner")) ownerSel.value = "owner";
+
+  const custodians = state.roles.filter(r=>r.is_custodian);
+  const nonCustodians = state.roles.filter(r=>!r.is_custodian);
+  $("i-custodians").innerHTML = custodians.map(r=>
+    `<label><input type="checkbox" value="${r.role_id}" checked> ${r.role_id} (x=${r.evaluation_point})</label>`
+  ).join("") || "<span style='color:var(--muted);font-size:12px;'>No custodian roles yet -- add some in step 1.</span>";
+  $("i-requesters").innerHTML = nonCustodians.map(r=>
+    `<label><input type="checkbox" value="${r.role_id}" ${r.role_id==="requester_q"?"checked":""}> ${r.role_id}</label>`
+  ).join("");
+  if (!$("i-record-id").value) $("i-record-id").value = "rec-" + randSuffix();
+}
+
+$("i-fetch-otp").addEventListener("click", async ()=>{
+  const role = $("i-owner").value;
+  if (!role) return;
+  const data = await api(`/roles/${role}/otp`);
+  $("i-owner-otp").value = data.otp;
+});
+
+async function doIssue(){
+  const custodianIds = Array.from($("i-custodians").querySelectorAll("input:checked")).map(i=>i.value);
+  const requesterIds = Array.from($("i-requesters").querySelectorAll("input:checked")).map(i=>i.value);
+  if (custodianIds.length === 0) throw new Error("select at least one custodian");
+  const otp = (await api(`/roles/${$("i-owner").value}/otp`)).otp;
+  const body = {
+    owner_role_id: $("i-owner").value,
+    owner_passphrase: $("i-owner-pass").value,
+    owner_otp: otp,
+    record_id: $("i-record-id").value.trim(),
+    message_base64: btoa(unescape(encodeURIComponent($("i-message").value))),
+    custodian_role_ids: custodianIds,
+    threshold: parseInt($("i-threshold").value, 10),
+    entitled_requesters: requesterIds,
+  };
+  const result = await api("/records/issue", {method:"POST", body: JSON.stringify(body)});
+  state.lastRecord = result;
+  $("out-record-id").textContent = result.record_id;
+  $("out-threshold").textContent = result.threshold;
+  $("out-custodians").textContent = result.custodian_role_ids.join(", ") + ` (n=${result.custodian_role_ids.length})`;
+  $("out-commitments").textContent = result.feldman_commitments.join("\n");
+  const gallery = $("out-gallery");
+  gallery.innerHTML = "";
+  result.custodian_role_ids.forEach(rid=>{
+    const fig = document.createElement("figure");
+    fig.innerHTML = `<img src="/records/${encodeURIComponent(result.record_id)}/carrier/${encodeURIComponent(rid)}" alt="carrier for ${rid}">
+      <figcaption>${rid}'s carrier (G_i)</figcaption>`;
+    gallery.appendChild(fig);
+  });
+  const card = $("issue-result-card");
+  card.style.display = "block";
+  reveal(card);
+  applyPresenterMode();
+  $("rec-record-id").value = result.record_id;
+  updateStepper();
+  return result;
+}
+
+$("issue-btn").addEventListener("click", async ()=>{
+  const statusEl = $("issue-status");
+  try{
+    setStatus(statusEl, "info", "Encrypting, splitting, wrapping, embedding...");
+    await doIssue();
+    setStatus(statusEl, "ok", "Record issued.");
+  }catch(e){ setStatus(statusEl, "err", e.message); }
+});
+
+// ---------- RECOVERY ----------
+let currentApprovals = {count:0, threshold:0, roleIds:[]};
+
+function populateRecoverySelectors(){
+  const sel = $("rec-requester");
+  const prev = sel.value;
+  sel.innerHTML = state.roles.map(r=>`<option value="${r.role_id}">${r.role_id}</option>`).join("");
+  if (state.roles.some(r=>r.role_id===prev)) sel.value = prev;
+  else if (state.roles.some(r=>r.role_id==="requester_q")) sel.value = "requester_q";
+  if (!$("rec-request-id").value) $("rec-request-id").value = "req-" + randSuffix();
+  if (state.lastRecord && !$("rec-record-id").value) $("rec-record-id").value = state.lastRecord.record_id;
+}
+
+$("rec-fetch-otp").addEventListener("click", async ()=>{
+  const role = $("rec-requester").value;
+  if (!role) return;
+  const data = await api(`/roles/${role}/otp`);
+  $("rec-requester-otp").value = data.otp;
+});
+
+async function doStartRecovery(){
+  const recordId = $("rec-record-id").value.trim();
+  const record = await api(`/records/${encodeURIComponent(recordId)}`);
+  const otp = (await api(`/roles/${$("rec-requester").value}/otp`)).otp;
+  $("rec-requester-otp").value = otp;
+  const body = {
+    request_id: $("rec-request-id").value.trim(),
+    record_id: recordId,
+    requester_role_id: $("rec-requester").value,
+    requester_passphrase: $("rec-requester-pass").value,
+    requester_otp: otp,
+  };
+  await api("/recovery/request", {method:"POST", body: JSON.stringify(body)});
+
+  currentApprovals = {count:0, threshold: record.threshold, roleIds: record.custodian_role_ids, requestId: body.request_id};
+  renderApprovalRows(record.custodian_role_ids);
+  updateApprovalProgress();
+  $("approvals-card").style.display = "block";
+  $("recover-card").style.display = "block";
+  $("recover-result").style.display = "none";
+  $("recover-btn").disabled = true;
+  reveal($("approvals-card"));
+  return record;
+}
+
+$("start-recovery-btn").addEventListener("click", async ()=>{
+  const statusEl = $("recovery-status");
+  try{
+    setStatus(statusEl, "info", "Checking policy and opening recovery request...");
+    await doStartRecovery();
+    setStatus(statusEl, "ok", "Recovery request opened -- collect approvals below.");
+  }catch(e){ setStatus(statusEl, "err", e.message); }
+});
+
+function renderApprovalRows(roleIds){
+  const wrap = $("approval-rows");
+  wrap.innerHTML = "";
+  roleIds.forEach(rid=>{
+    const row = document.createElement("div");
+    row.className = "grid";
+    row.style.marginBottom = "10px";
+    row.dataset.role = rid;
+    row.innerHTML = `
+      <div class="field"><label>${rid} passphrase</label><input type="text" class="appr-pass" value="demo-passphrase-123"></div>
+      <div class="field"><label>${rid} OTP</label>
+        <div class="row-inline">
+          <input type="text" class="appr-otp">
+          <button class="btn ghost appr-fetch" data-role="${rid}">Fetch</button>
+          <button class="btn secondary appr-approve" data-role="${rid}">Approve</button>
+        </div>
+      </div>`;
+    wrap.appendChild(row);
+    row.querySelector(".appr-fetch").addEventListener("click", async ()=>{
+      const data = await api(`/roles/${rid}/otp`);
+      row.querySelector(".appr-otp").value = data.otp;
+    });
+    row.querySelector(".appr-approve").addEventListener("click", async ()=>{
+      const statusEl = $("recovery-status");
+      try{ await doApprove(rid); }
+      catch(e){ setStatus(statusEl, "err", e.message); }
+    });
+  });
+}
+
+async function doApprove(rid){
+  const row = document.querySelector(`#approval-rows [data-role="${CSS.escape(rid)}"]`);
+  const otp = (await api(`/roles/${rid}/otp`)).otp;
+  row.querySelector(".appr-otp").value = otp;
+  const body = {
+    request_id: currentApprovals.requestId,
+    custodian_role_id: rid,
+    custodian_passphrase: row.querySelector(".appr-pass").value,
+    custodian_otp: otp,
+  };
+  const result = await api("/recovery/approve", {method:"POST", body: JSON.stringify(body)});
+  currentApprovals.count = result.approvals_so_far;
+  const btn = row.querySelector(".appr-approve");
+  btn.disabled = true; btn.textContent = "Approved";
+  updateApprovalProgress();
+  setStatus($("recovery-status"), "ok", `${rid} approved (${result.approvals_so_far}/${currentApprovals.threshold}).`);
+  return result;
+}
+
+function updateApprovalProgress(){
+  const pct = Math.min(100, (currentApprovals.count / currentApprovals.threshold) * 100);
+  $("approval-progress").style.width = pct + "%";
+  $("approval-count").textContent = `${currentApprovals.count} of ${currentApprovals.threshold} approvals collected`;
+  $("recover-btn").disabled = currentApprovals.count < currentApprovals.threshold;
+}
+
+async function doRecover(){
+  const body = {
+    request_id: currentApprovals.requestId,
+    requester_passphrase: $("rec-requester-pass").value,
+    requester_otp: $("rec-requester-otp").value,
+  };
+  const result = await api("/recovery/recover", {method:"POST", body: JSON.stringify(body)});
+  let text;
+  try{ text = decodeURIComponent(escape(atob(result.message_base64))); }
+  catch(e){ text = "(binary payload, base64) " + result.message_base64; }
+  $("recovered-message").textContent = text;
+  const box = $("recover-result");
+  box.style.display = "block";
+  reveal(box); glow(box);
+  state.recovered = true;
+  updateStepper();
+  return text;
+}
+
+$("recover-btn").addEventListener("click", async ()=>{
+  const statusEl = $("recover-status");
+  try{
+    setStatus(statusEl, "info", "Interpolating K (eq. 9), deriving k_e, decrypting...");
+    await doRecover();
+    clearStatus(statusEl);
+  }catch(e){ setStatus(statusEl, "err", e.message); }
+});
+
+// ---------- AUDIT ----------
+async function refreshAuditLog(){
+  const entries = await api("/audit/log");
+  const tbody = $("audit-table");
+  tbody.innerHTML = entries.map(e=>
+    `<tr><td>${e.seq}</td><td class="mono">${e.event_type}</td><td class="mono">${e.actor_id}</td>
+      <td>${fmtTime(e.timestamp)}</td><td class="mono">${e.entry_hash.slice(0,16)}...</td></tr>`
+  ).join("");
+  return entries;
+}
+$("refresh-log-btn").addEventListener("click", ()=>refreshAuditLog().catch(e=>setStatus($("audit-status"),"err",e.message)));
+
+async function doVerifyLog(){
+  const result = await api("/audit/verify");
+  if (result.ok) setStatus($("audit-status"), "ok", "Log verifies: hash chain, signatures and checkpoints all intact.");
+  else setStatus($("audit-status"), "err", "Log FAILED verification: " + result.problems.join(" | "));
+  return result;
+}
+$("verify-log-btn").addEventListener("click", ()=>doVerifyLog().catch(e=>setStatus($("audit-status"),"err",e.message)));
+
+async function doTamperDemo(){
+  const result = await api("/audit/tamper-demo", {method:"POST"});
+  const box = $("tamper-result");
+  box.style.display = "grid";
+  reveal(box);
+  $("tamper-clean-body").innerHTML = result.clean_verify.ok
+    ? "verifies cleanly" : result.clean_verify.problems.join("<br>");
+  $("tamper-tampered-body").innerHTML = result.tampered_verify.ok
+    ? "verifies cleanly (unexpected)" : result.tampered_verify.problems.join("<br>");
+  glow($("tamper-tampered"));
+  $("tamper-explain").textContent = `What was tampered: ${result.what_was_tampered}. ${result.note}`;
+  state.tamperRun = true;
+  updateStepper();
+  return result;
+}
+
+$("tamper-btn").addEventListener("click", async ()=>{
+  const statusEl = $("tamper-status");
+  try{
+    setStatus(statusEl, "info", "Running tamper simulation on a scratch copy...");
+    await doTamperDemo();
+    clearStatus(statusEl);
+  }catch(e){ setStatus(statusEl, "err", e.message); }
+});
+
+// ---------- RESET ----------
+$("reset-demo-btn").addEventListener("click", ()=>{
+  state.lastRecord = null; state.recovered = false; state.tamperRun = false;
+  currentApprovals = {count:0, threshold:0, roleIds:[]};
+  ["issue-result-card","approvals-card","recover-card","tamper-result"].forEach(id=>{
+    const el = $(id); if (el) el.style.display = "none";
+  });
+  $("finale-banner").classList.remove("show");
+  ["issue-status","recovery-status","recover-status","audit-status","tamper-status","roles-status"].forEach(id=>clearStatus($(id)));
+  $("i-record-id").value = ""; $("rec-record-id").value = ""; $("rec-request-id").value = "";
+  $("i-owner-otp").value = ""; $("rec-requester-otp").value = "";
+  updateStepper();
+  showTab("roles");
+});
+
+// ---------- AUTOMATED FULL DEMO ----------
+async function runAutomatedDemo(){
+  const btn = $("auto-demo-btn");
+  btn.disabled = true;
+  try{
+    caption("Setting up roles: an owner, three custodians, and a requester...");
+    showTab("roles");
+    await doQuickstart();
+    await sleep(900);
+
+    caption("Issuing a record: encrypting, splitting the key 2-of-3, wrapping shares, embedding into cover images...");
+    showTab("issue");
+    await sleep(500);
+    $("i-threshold").value = 2;
+    populateIssueSelectors();
+    $("i-owner").value = "owner";
+    await sleep(300);
+    await doIssue();
+    await sleep(1400);
+
+    caption("Starting a recovery request as the entitled requester...");
+    showTab("recovery");
+    await sleep(500);
+    populateRecoverySelectors();
+    $("rec-requester").value = "requester_q";
+    $("rec-record-id").value = state.lastRecord.record_id;
+    await doStartRecovery();
+    await sleep(900);
+
+    caption("Collecting custodian approvals (2 of 3 needed)...");
+    for (const rid of currentApprovals.roleIds.slice(0, currentApprovals.threshold)){
+      await doApprove(rid);
+      await sleep(700);
+    }
+
+    caption("Reconstructing the key and decrypting the message...");
+    await sleep(500);
+    await doRecover();
+    await sleep(1600);
+
+    caption("Verifying the signed audit log...");
+    showTab("audit");
+    await sleep(500);
+    await refreshAuditLog();
+    await doVerifyLog();
+    await sleep(1200);
+
+    caption("Running a live tamper-detection demo (Table IV)...");
+    await sleep(600);
+    await doTamperDemo();
+    await sleep(1400);
+
+    caption(null);
+    const banner = $("finale-banner");
+    banner.classList.add("show");
+    reveal(banner);
+    banner.scrollIntoView({behavior:"smooth", block:"center"});
+  }catch(e){
+    caption(null);
+    alert("Automated demo stopped: " + e.message);
+  }finally{
+    btn.disabled = false;
+  }
+}
+$("auto-demo-btn").addEventListener("click", runAutomatedDemo);
+
+// ---------- init ----------
+applyPresenterMode();
+refreshRoles().then(populateIssueSelectors).catch(()=>{});
+</script>
+</body>
+</html>
