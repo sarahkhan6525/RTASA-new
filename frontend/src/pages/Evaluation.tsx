@@ -1,10 +1,13 @@
 // The paper's own quantitative evaluation (Sec. V), laid out for a
 // demo: Table III (functional/adversarial checks), Table IV (log
 // tampering detection), Fig. 2 (latency), Fig. 3 (concealment), plus a
-// live snapshot of this running backend. Numbers are exactly as the
-// paper reports them -- clearly labeled "as reported," distinct from
-// what's live -- with a direct link to the Security Testing tab, which
-// reproduces Table III and one Table IV row for real, right now.
+// live snapshot of this running backend. Tables III/IV mirror the
+// corrected/justified paper (RTASA_LNCS_justified): the paper no longer
+// claims literal 840/200-trial counts -- its real backing data is the
+// 79-test automated pytest suite (tests/test_end_to_end.py), so these
+// tables show pass/detect outcomes rather than invented trial counts.
+// A direct link to the Security Testing tab lets you reproduce Table III
+// and one Table IV row live, right now, against the real code.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, CheckCircle2, XCircle, FileText, Users, ScrollText, ArrowRight } from "lucide-react";
@@ -22,25 +25,34 @@ const TABLE_III = [
 ];
 
 const TABLE_IV = [
-  { attack: "Edit entry, no recomputation", plain: 200, rtasa: 200 },
-  { attack: "Edit entry, host recomputes chain", plain: 0, rtasa: 200 },
-  { attack: "Insider edits own entry, re-signs", plain: 0, rtasa: 200 },
-  { attack: "Insert forged entry, recompute", plain: 0, rtasa: 200 },
-  { attack: "Delete entry, no recomputation", plain: 200, rtasa: 200 },
-  { attack: "Truncate before last checkpoint", plain: 0, rtasa: 200 },
-  { attack: "Truncate after last checkpoint", plain: 0, rtasa: 0 },
+  { attack: "Edit entry, no recomputation", plainDetected: true, rtasaDetected: true },
+  { attack: "Edit entry, host recomputes chain", plainDetected: false, rtasaDetected: true },
+  { attack: "Insider edits own entry, re-signs", plainDetected: false, rtasaDetected: true },
+  { attack: "Insert forged entry, recompute", plainDetected: false, rtasaDetected: true },
+  { attack: "Delete entry, no recomputation", plainDetected: true, rtasaDetected: true },
+  { attack: "Truncate before last checkpoint", plainDetected: false, rtasaDetected: true },
+  { attack: "Truncate after last checkpoint", plainDetected: false, rtasaDetected: false },
 ];
 
-function DetectionChip({ n, of }: { n: number; of: number }) {
-  const ok = n === of;
+function PassBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-800 bg-emerald-950/40 px-2 py-0.5 text-xs font-medium text-emerald-300">
+      <CheckCircle2 className="h-3 w-3" /> Pass
+    </span>
+  );
+}
+
+function OutcomeBadge({ detected }: { detected: boolean }) {
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
-        ok ? "border-emerald-800 bg-emerald-950/40 text-emerald-300" : "border-rose-800 bg-rose-950/40 text-rose-300"
+        detected
+          ? "border-emerald-800 bg-emerald-950/40 text-emerald-300"
+          : "border-rose-800 bg-rose-950/40 text-rose-300"
       }`}
     >
-      {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-      {n}/{of}
+      {detected ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+      {detected ? "Detected" : "Not detected"}
     </span>
   );
 }
@@ -115,7 +127,8 @@ export default function Evaluation() {
               Table III: Functional checks (as reported, Sec. V-B)
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              40 records each of (k, n) = (2,3), (3,5), (5,7): 840 checks total, all behaved as specified.
+              Automated pytest suite (<code className="text-slate-400">tests/test_end_to_end.py</code>, 79 tests
+              total), run once for each of (k, n) = (2,3), (3,5), (5,7) — every test passed.
             </p>
           </div>
           <Link
@@ -132,7 +145,7 @@ export default function Evaluation() {
                 <span className="text-slate-200">{row.check}</span>
                 <span className="ml-2 text-xs text-slate-500">{row.mechanism}</span>
               </div>
-              <DetectionChip n={120} of={120} />
+              <PassBadge />
             </div>
           ))}
         </div>
@@ -143,17 +156,17 @@ export default function Evaluation() {
           Table IV: Detection of log tampering (as reported, Sec. V-B)
         </h2>
         <p className="mb-3 text-xs text-slate-500">
-          Seven attacks, 200 trials each on 64-entry logs with a checkpoint every 8 entries. A plain hash chain
-          misses every attack where the host recomputes hashes; RTASA detects all of them except truncation after
-          the last checkpoint, the designed window.
+          Seven attacks, each checked by the automated test suite at several tamper positions on 64-entry logs with
+          a checkpoint every 8 entries. A plain hash chain misses every attack where the host recomputes hashes;
+          RTASA detects all of them except truncation after the last checkpoint, the designed window.
         </p>
         <div className="space-y-1.5">
           {TABLE_IV.map((row) => (
             <div key={row.attack} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
               <span className="text-slate-200">{row.attack}</span>
               <div className="flex shrink-0 items-center gap-3 text-xs">
-                <span className="text-slate-500">plain chain <DetectionChip n={row.plain} of={200} /></span>
-                <span className="text-slate-500">RTASA <DetectionChip n={row.rtasa} of={200} /></span>
+                <span className="text-slate-500">plain chain <OutcomeBadge detected={row.plainDetected} /></span>
+                <span className="text-slate-500">RTASA <OutcomeBadge detected={row.rtasaDetected} /></span>
               </div>
             </div>
           ))}
@@ -165,13 +178,14 @@ export default function Evaluation() {
           Fig. 2: Latency for a 1 MiB record (as reported, Sec. V-C)
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Across (k, n) from (2,3) to (7,10), against AES-GCM + a single RSA-OAEP wrap (E + A only, no T/S/L).
-          Embedding (S) dominates issuance; Feldman checks (T) and RSA private-key ops (A) dominate recovery.
-          Even at ten custodians, recovery stays below 25 ms at the 90th percentile.
+          Across (k, n) from (2,3) to (7,10), against AES-GCM + a single RSA-OAEP wrap (E + A only, no T/S/L),
+          measured on a consumer laptop (Apple MacBook Air, Python 3.10.11). Embedding (S) dominates issuance;
+          Feldman checks (T) and RSA private-key ops (A) dominate recovery. Even at ten custodians, recovery
+          stays below 55 ms at the 90th percentile.
         </p>
         <div className="space-y-4">
-          <RangeBar label="Issuance (I)" lo={3.4} hi={12.5} baseline={0.29} max={20} />
-          <RangeBar label="Recovery (R)" lo={3.9} hi={19.1} baseline={0.76} max={20} />
+          <RangeBar label="Issuance (I)" lo={11.7} hi={33.8} baseline={0.18} max={60} />
+          <RangeBar label="Recovery (R)" lo={16.2} hi={53.8} baseline={0.70} max={60} />
         </div>
         <p className="mt-3 text-[11px] text-slate-600">
           The violet band is RTASA's range across (k,n) settings; the white tick is the plain-hybrid baseline.

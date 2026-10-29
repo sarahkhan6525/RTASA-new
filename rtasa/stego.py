@@ -26,7 +26,7 @@ where Z_i lives in the carrier.
 from __future__ import annotations
 
 import hashlib
-import random
+import hmac
 from dataclasses import dataclass
 
 import numpy as np
@@ -43,12 +43,62 @@ class ExtractionError(Exception):
     shape) could not possibly match how the payload was embedded."""
 
 
-def _seed_from_kappa(kappa: bytes, record_id: str) -> int:
-    """Derive a deterministic PRNG seed from the per-role embedding key and
-    the record id, so the same kappa never reuses the same pixel order for
-    two different records (ties S's secrecy to A's id binding, eq. 5-6)."""
-    digest = hashlib.sha256(kappa + b"|" + record_id.encode("utf-8")).digest()
-    return int.from_bytes(digest[:8], "big")
+class _KeyedCSPRNG:
+    """Deterministic, keyed pseudorandom stream for a single (kappa,
+    record_id, purpose) triple, built from HMAC-SHA256 in counter mode --
+    a standard hash-based PRF/DRBG construction.
+
+    This replaces an earlier version that seeded Python's `random.Random`
+    (a non-cryptographic Mersenne Twister, whose internal state is
+    reconstructible from a few hundred outputs) from only the first 64
+    bits of SHA-256(kappa_i || record_id) -- a 64-bit seed is within reach
+    of a well-resourced brute-force search, well short of the 256 bits of
+    entropy kappa_i (eq. 6) actually carries. Here the full kappa_i is
+    used directly as the HMAC key, so recovering the position/direction
+    stream requires breaking HMAC-SHA256, not guessing a 64-bit seed.
+    `purpose` domain-separates the position-selection stream (eq. 6) from
+    the +-1 direction-choice stream used by LSB matching, replacing the
+    previous ad hoc XOR-constant separation.
+    """
+
+    def __init__(self, kappa: bytes, record_id: str, purpose: bytes) -> None:
+        self._key = kappa
+        self._info = record_id.encode("utf-8") + b"|" + purpose
+        self._counter = 0
+        self._buffer = b""
+
+    def _refill(self) -> None:
+        block = hmac.new(
+            self._key, self._info + self._counter.to_bytes(4, "big"), hashlib.sha256
+        ).digest()
+        self._counter += 1
+        self._buffer += block
+
+    def _bytes(self, n: int) -> bytes:
+        while len(self._buffer) < n:
+            self._refill()
+        out, self._buffer = self._buffer[:n], self._buffer[n:]
+        return out
+
+    def randrange(self, start: int, stop: int) -> int:
+        """Uniform integer in [start, stop), via rejection sampling so the
+        result carries no modulo bias (the usual `x % span` pitfall)."""
+        span = stop - start
+        if span <= 0:
+            raise ValueError("empty range")
+        nbytes = (span.bit_length() // 8) + 2  # headroom for the rejection step
+        limit = 1 << (nbytes * 8)
+        threshold = limit - (limit % span)
+        while True:
+            val = int.from_bytes(self._bytes(nbytes), "big")
+            if val < threshold:
+                return start + (val % span)
+
+    def random(self) -> float:
+        """Uniform float in [0, 1) at 53 bits of precision, matching the
+        precision `random.Random.random()` provides."""
+        val = int.from_bytes(self._bytes(7), "big") >> 3
+        return val / float(1 << 53)
 
 
 def _select_positions(num_pixels: int, count: int, kappa: bytes, record_id: str) -> list:
@@ -72,7 +122,7 @@ def _select_positions(num_pixels: int, count: int, kappa: bytes, record_id: str)
         raise CapacityError(
             f"payload needs {count} pixels but the cover only has {num_pixels}"
         )
-    rng = random.Random(_seed_from_kappa(kappa, record_id))
+    rng = _KeyedCSPRNG(kappa, record_id, b"positions")
     swapped = {}
     positions = []
     for i in range(count):
@@ -118,7 +168,7 @@ def embed(cover: np.ndarray, payload: bytes, kappa: bytes, record_id: str) -> np
     bits = _bytes_to_bits(payload)
     positions = _select_positions(flat.size, len(bits), kappa, record_id)
 
-    rng = random.Random(_seed_from_kappa(kappa, record_id) ^ 0xA5A5A5A5)
+    rng = _KeyedCSPRNG(kappa, record_id, b"direction")
     for pos, bit in zip(positions, bits):
         value = int(flat[pos])
         if (value & 1) == bit:

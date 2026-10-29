@@ -1,118 +1,104 @@
 """
-RS (Regular-Singular) analysis -- Fridrich, Goljan & Du, "Reliable
-Detection of LSB Steganography in Color and Grayscale Images" (2001),
-cited by the paper as [36] (Sec. V-D: "RS analysis [36]").
+RS (Regular/Singular) analysis (Fridrich, Goljan & Du, 2001 [36]) --
+Sec. V-D's first structural steganalysis detector.
 
-This module implements the parts of RS analysis that are unambiguous and
-independently verifiable from the paper (the discrimination function, the
-F1/F-1 flipping functions, the R/S/U classification, and the core
-hypothesis of Eq. (3) that a cover image has R_M ~ R_{-M} and S_M ~
-S_{-M}), and uses a discriminant built directly from that hypothesis as
-the detector score, rather than solving the paper's full quadratic
-rate-estimator (its Eq. 4). The exact sign pattern and exponents of that
-quadratic could not be verified character-for-character from the
-available source text, and shipping an unverified formula as though it
-were exact would be worse than being explicit about the simplification:
-the discriminant below is still literally "RS analysis" -- same groups,
-same flips, same R/S counting, same hypothesis test -- it just reports
-the raw asymmetry between the two masks as a continuous score instead of
-inverting it into an estimated payload fraction p.
+The method partitions an image into small groups of pixels and, for each
+group, checks whether a fixed "flipping" perturbation makes the group
+*more* or *less* locally smooth (its discrimination value). For a natural
+image, flipping a group's LSBs with F1 and with its mirror-image flip F(-1)
+disturbs smoothness in roughly symmetric proportions (as many groups become
+smoother as rougher, under either flip). LSB *replacement* breaks that
+symmetry in a detectable, rate-dependent way; LSB *matching* (RTASA's own
+embedder, `rtasa/stego.py`) does not, because it does not consistently pick
+one flip direction over the other -- which is exactly the qualitative
+picture Sec. V-D / Fig. 3 reports.
 
-    f(x_1, ..., x_n) = sum_{i=1}^{n-1} |x_{i+1} - x_i|      (discrimination function)
-    F1(x)  = x XOR 1                                         (LSB flip)
-    F-1(x) = F1(x+1) - 1                                     ("shifted" flip)
-    group G is Regular under mask M  if f(F_M(G)) > f(G)
-    group G is Singular under mask M if f(F_M(G)) < f(G)
-    Eq. (3): for a cover image, R_M ~= R_{-M} and S_M ~= S_{-M}
-
-Verified against the worked example in Dumitrescu, Wu & Wang (2003),
-Sec. VII, which restates the RS discrimination function and gives a
-numeric check: G=(39,38,40,41), M=(1,0,1,0) makes G singular under M
-(f(G)=4, f(F_M(G))=3) and regular under -M (f(F_{-M}(G))=5). See
-`tests/test_steganalysis.py::test_rs_worked_example`.
+`test_rs_worked_example_discrimination_and_flips` /
+`..._classification` in `tests/test_steganalysis.py` cross-check
+`_discrimination`, `_flip1`, `_flip_minus1`, `_apply_mask`, and `_classify`
+directly against the numeric example in Dumitrescu, Wu & Wang (2003),
+Sec. VII (G = (39, 38, 40, 41), mask M = (1, 0, 1, 0)) -- run that test
+after changing anything here.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-GROUP_SIZE = 4
-MASK = (1, 0, 1, 0)  # verified against the Dumitrescu-Wu-Wang worked example
+DEFAULT_MASK = (1, 0, 1, 0)
 
 
 def _flip1(x: int) -> int:
-    return x ^ 1
+    """F1: the standard LSB flip, pairing 2k <-> 2k+1."""
+    return x + 1 if x % 2 == 0 else x - 1
 
 
 def _flip_minus1(x: int) -> int:
-    # F-1(x) = F1(x+1) - 1, which pairs (-1,0),(1,2),(3,4),...,(253,254),(255,256).
-    # The two boundary values (x=0 -> -1, x=255 -> 256) fall outside the
-    # valid pixel range; we clamp them back in, a standard, small-impact
-    # simplification at the extreme ends of the pixel range.
-    value = (_flip1(x + 1)) - 1
-    return max(0, min(255, value))
+    """F(-1): the shifted flip, pairing 2k-1 <-> 2k (i.e. F1 shifted by
+    one value), used as the "mirror" perturbation against which F1's
+    effect is compared."""
+    return x - 1 if x % 2 == 0 else x + 1
 
 
-def _discrimination(group: np.ndarray) -> int:
-    diffs = np.abs(np.diff(group.astype(np.int32)))
-    return int(diffs.sum())
+def _discrimination(g) -> int:
+    """f(G): the group's "roughness" -- the sum of absolute differences
+    between consecutive pixels. Smaller is smoother."""
+    arr = np.asarray(g, dtype=np.int64)
+    return int(np.sum(np.abs(np.diff(arr))))
 
 
-def _apply_mask(group: np.ndarray, mask, sign: int) -> np.ndarray:
-    out = group.copy()
+def _apply_mask(g, mask, direction: int):
+    """Apply F1 (direction=+1) or F(-1) (direction=-1) to every position
+    of `g` where `mask` is 1, leaving masked-out positions untouched."""
+    arr = np.asarray(g, dtype=np.int64).copy()
+    flip = _flip1 if direction == 1 else _flip_minus1
     for i, m in enumerate(mask):
-        m = m * sign
-        if m == 1:
-            out[i] = _flip1(int(group[i]))
-        elif m == -1:
-            out[i] = _flip_minus1(int(group[i]))
-        # m == 0: unchanged
-    return out
+        if m:
+            arr[i] = flip(int(arr[i]))
+    return arr
 
 
-def _classify(group: np.ndarray, mask, sign: int) -> str:
-    f0 = _discrimination(group)
-    f1 = _discrimination(_apply_mask(group, mask, sign))
-    if f1 > f0:
+def _classify(g, mask, direction: int) -> str:
+    """"R" (regular) if the flip increases roughness, "S" (singular) if it
+    decreases it, "U" (unusable) if roughness is unchanged."""
+    before = _discrimination(g)
+    after = _discrimination(_apply_mask(g, mask, direction))
+    if after > before:
         return "R"
-    if f1 < f0:
+    if after < before:
         return "S"
     return "U"
 
 
-def rs_statistic(image: np.ndarray) -> float:
-    """A continuous RS-analysis detector score for a grayscale image.
-
-    Near 0 for an unmodified cover or an LSB-*matching* stego image
-    (because matching does not disturb the R_M ~= R_{-M}, S_M ~= S_{-M}
-    symmetry RS analysis relies on); grows with the LSB-*replacement*
-    embedding rate, which breaks that symmetry (Fridrich et al.'s whole
-    point). Scored as (R_M - R_{-M}) - (S_M - S_{-M}).
+def rs_statistic(image: np.ndarray, mask=DEFAULT_MASK) -> float:
+    """The image-level RS statistic: (R_M% - S_M%) - (R_(-M)% - S_(-M)%)
+    over all non-overlapping groups of `len(mask)` pixels, scanned
+    row-major. Near 0 for an unmodified cover and for LSB matching;
+    grows in magnitude under LSB replacement as the embedding rate rises.
     """
-    if image.dtype != np.uint8 or image.ndim != 2:
-        raise ValueError("image must be a 2-D uint8 grayscale array")
-
-    flat = image.reshape(-1).astype(np.int32)
-    n_groups = flat.size // GROUP_SIZE
-    flat = flat[: n_groups * GROUP_SIZE].reshape(n_groups, GROUP_SIZE)
-
-    counts = {"R_M": 0, "S_M": 0, "R_-M": 0, "S_-M": 0}
-    for group in flat:
-        c = _classify(group, MASK, +1)
-        if c == "R":
-            counts["R_M"] += 1
-        elif c == "S":
-            counts["S_M"] += 1
-        c2 = _classify(group, MASK, -1)
-        if c2 == "R":
-            counts["R_-M"] += 1
-        elif c2 == "S":
-            counts["S_-M"] += 1
-
-    if n_groups == 0:
+    arr = np.asarray(image)
+    flat = arr.reshape(-1)
+    n = len(mask)
+    num_groups = flat.size // n
+    if num_groups == 0:
         return 0.0
-    r_m = counts["R_M"] / n_groups
-    s_m = counts["S_M"] / n_groups
-    r_minus_m = counts["R_-M"] / n_groups
-    s_minus_m = counts["S_-M"] / n_groups
-    return (r_m - r_minus_m) - (s_m - s_minus_m)
+    groups = flat[: num_groups * n].reshape(num_groups, n)
+
+    r_m = s_m = r_mm = s_mm = 0
+    for group in groups:
+        c_plus = _classify(group, mask, 1)
+        if c_plus == "R":
+            r_m += 1
+        elif c_plus == "S":
+            s_m += 1
+        c_minus = _classify(group, mask, -1)
+        if c_minus == "R":
+            r_mm += 1
+        elif c_minus == "S":
+            s_mm += 1
+
+    r_m_pct = r_m / num_groups
+    s_m_pct = s_m / num_groups
+    r_mm_pct = r_mm / num_groups
+    s_mm_pct = s_mm / num_groups
+    return (r_m_pct - s_m_pct) - (r_mm_pct - s_mm_pct)

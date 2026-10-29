@@ -93,6 +93,10 @@ def approve(
     except AuthenticationError as exc:
         raise HTTPException(401, str(exc)) from exc
     except AuthorizationError as exc:
+        # Also covers a custodian double-approving the same request
+        # (rtasa/recovery.py's approve_share now rejects that as an
+        # AuthorizationError) -- surfaced here as a clean 403 rather than
+        # letting a duplicate share slip through to recover_record.
         raise HTTPException(403, str(exc)) from exc
     except (ShareUnwrapError, ShareVerificationError) as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -126,6 +130,13 @@ def recover(
     except AuthenticationError as exc:
         raise HTTPException(401, str(exc)) from exc
     except (ShareUnwrapError, ShareVerificationError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ValueError as exc:
+        # Defense in depth: rtasa/shamir.py's reconstruct_secret raises a
+        # bare ValueError if it's ever handed duplicate share indices.
+        # approve_share now refuses a duplicate approval before it can
+        # reach this point, so this should be unreachable in practice --
+        # but if it ever does happen, a clean 400 beats an unhandled 500.
         raise HTTPException(400, str(exc)) from exc
 
     persist(db, system)

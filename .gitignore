@@ -1,28 +1,40 @@
+# Secrets -- never commit real credentials
+.env
+.rtasa_master.key
+.rtasa_session_secret
+.rtasa_*secret*
+
+# Runtime state -- generated fresh by `python cli.py serve` / `demo` / `test`,
+# never part of the source
+rtasa.db
+*.db
+security_events.log
+*.log
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
 .venv/
 venv/
-rtasa.db
-demo_ui*.db
-carrier_output/
-carriers/generated/
+
+# Node / frontend -- a second, newer React frontend was started here but
+# has no package.json or build tooling yet, so it can't actually be built;
+# the working, demoed UI is webui/index.html (served by app/main.py), not
+# this one. Excluded from the repo for now so nothing published looks
+# broken or unfinished -- it's still on disk locally, just not pushed.
+node_modules/
+frontend/
+
+# OS / editor cruft
 .DS_Store
+.vscode/
+.idea/
 
-# Enterprise security hardening (rtasa/secrets_vault.py, app/security_config.py):
-# the dev-convenience master key and the security-event log must never be committed
-.rtasa_master.key
-.rtasa_session_secret
-security_events.log
-
-# Real SMTP credentials for the email-OTP login flow (app/email_otp.py) --
-# copy .env.example to .env and fill it in locally, never commit .env itself
-.env
-
-# Frontend build output and dependencies
-frontend/node_modules/
-frontend/dist/
-
-# Scratch logs from local dev runs
-*.log
+# Generated evaluation output
+*.png
+!webui/**/*.png
+!docs/screenshots/**/*.png
+steganalysis_auc.png
+benchmark_latency.png

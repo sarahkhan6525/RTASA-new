@@ -87,7 +87,6 @@ export default function AccessRequests() {
     try {
       const rid = `req-${Date.now()}`;
       const otp = await api.getOtp(requesterRoleId);
-      saveCredential(requesterRoleId, requesterPassphrase);
       await api.startRecovery({
         request_id: rid,
         record_id: record.record_id,
@@ -95,6 +94,12 @@ export default function AccessRequests() {
         requester_passphrase: requesterPassphrase,
         requester_otp: otp.otp,
       });
+      // Only remember the passphrase once the backend has actually accepted
+      // it -- saving it before this point risked persisting a wrong
+      // passphrase to localStorage on a failed attempt, which getCredential
+      // would then silently pre-fill into the field next time, leading the
+      // user to unknowingly resubmit the same bad credential.
+      saveCredential(requesterRoleId, requesterPassphrase);
       setRequestId(rid);
       toast.success("Access request sent to custodians");
     } catch (e) {
@@ -113,13 +118,15 @@ export default function AccessRequests() {
     try {
       const pass = custodianPassphrases[custodianId] ?? "";
       const otp = await api.getOtp(custodianId);
-      saveCredential(custodianId, pass);
       const res = await api.approveRecovery({
         request_id: requestId,
         custodian_role_id: custodianId,
         custodian_passphrase: pass,
         custodian_otp: otp.otp,
       });
+      // Same reasoning as handleRequest above -- only save once the
+      // backend has actually confirmed this passphrase is correct.
+      saveCredential(custodianId, pass);
       setApprovedRoles((prev) => new Set(prev).add(custodianId));
       setApprovedCount(res.approvals_so_far);
       toast.success(`${roleName(custodianId)} approved (${res.approvals_so_far} so far)`);

@@ -11,7 +11,7 @@ allows:
     * `--trials` repetitions after `--warmup` discarded warm-up runs
       (defaults: 300 / 20, exactly as Sec. V-A states).
     * Reports the median, and the 90th percentile for recovery (the paper
-      calls out "recovery stays below 25 ms at the 90th percentile" for
+      calls out "recovery stays below 55 ms at the 90th percentile" for
       ten custodians, Sec. V-C).
 
 The paper is explicit that its own absolute numbers come from "a shared
@@ -197,8 +197,8 @@ def main() -> None:
     baseline = benchmark_plain_hybrid(message, args.trials, args.warmup)
     base_issue = statistics.median(baseline.issuance_ms)
     base_recover = statistics.median(baseline.recovery_ms)
-    print(f"  median issuance  = {base_issue:.3f} ms   (paper: 0.29 ms)")
-    print(f"  median recovery  = {base_recover:.3f} ms   (paper: 0.76 ms)")
+    print(f"  median issuance  = {base_issue:.3f} ms   (paper: 0.18 ms)")
+    print(f"  median recovery  = {base_recover:.3f} ms   (paper: 0.70 ms)")
 
     print()
     print(f"{'(k, n)':<10}{'median issuance (ms)':<24}{'median recovery (ms)':<24}{'p90 recovery (ms)':<20}")

@@ -16,6 +16,7 @@ from rtasa.audit_log import AuditEntry, AuditLog, Checkpoint, CheckpointWitnessS
 from rtasa.crypto_core import Ciphertext
 from rtasa.keystore import RoleIdentity, RoleKeyStore
 from rtasa.records import Record, RoleCarrier
+from rtasa.recovery import RecoveryRequest
 from rtasa.rsa_wrap import RSAKeyPairPEM
 from rtasa.secrets_vault import seal, seal_str, unseal, unseal_str
 from rtasa.shamir import FeldmanCommitments
@@ -100,6 +101,23 @@ def save_system(db: Session, system: RTASASystem) -> None:
         cprow.countersignatures_json = {k: v.hex() for k, v in cp.countersignatures.items()}
         db.merge(cprow)
 
+    # Pending/in-progress recovery requests -- previously never persisted,
+    # so a backend restart silently dropped them (and their approvals-so-
+    # far) even though everything above survived. Approvals are stored
+    # hex-encoded, same convention as RecordRow's ciphertext fields above:
+    # they're RSA-OAEP-wrapped shares (ciphertext under the requester's own
+    # public key), not plaintext secrets needing the seal()/seal_str()
+    # treatment RoleRow's private key material gets.
+    for request_id, req in system.recovery_requests.items():
+        rqrow = db.get(models.RecoveryRequestRow, request_id) or models.RecoveryRequestRow(
+            request_id=request_id
+        )
+        rqrow.record_id = req.record_id
+        rqrow.requester_role_id = req.requester_role_id
+        rqrow.approvals_json = [a.hex() for a in req.approvals]
+        rqrow.approving_roles_json = list(req.approving_roles)
+        db.merge(rqrow)
+
     db.commit()
 
 
@@ -149,7 +167,14 @@ def load_system(db: Session) -> RTASASystem:
         system.audit_log.checkpoints.append(cp)
         system.witness_store.record(cp)
 
-    for rrow in db.query(models.RecordRow).all():
+    # Ordered by record_id (which embeds a millisecond timestamp -- see
+    # frontend/src/pages/ProtectRecord.tsx's `rec-${Date.now()}`), so
+    # `system.records` is populated in the same chronological order after
+    # a restart as it was during the live session. Without this, a plain
+    # unordered query result decides dict iteration order, and
+    # app/routers/dashboard.py's `records[-1]` "latest record" pick can
+    # land on an arbitrary record instead of the actual most recent one.
+    for rrow in db.query(models.RecordRow).order_by(models.RecordRow.record_id).all():
         commitments = FeldmanCommitments.from_hex_list(
             rrow.commitments_json, threshold=rrow.threshold, record_id=rrow.record_id
         )
@@ -177,5 +202,14 @@ def load_system(db: Session) -> RTASASystem:
                 payload_len_bytes=crow.payload_len_bytes,
             )
         system.records[record.record_id] = record
+
+    for rqrow in db.query(models.RecoveryRequestRow).order_by(models.RecoveryRequestRow.request_id).all():
+        req = RecoveryRequest(
+            record_id=rqrow.record_id,
+            requester_role_id=rqrow.requester_role_id,
+        )
+        req.approvals = [bytes.fromhex(a) for a in rqrow.approvals_json]
+        req.approving_roles = list(rqrow.approving_roles_json)
+        system.recovery_requests[rqrow.request_id] = req
 
     return system

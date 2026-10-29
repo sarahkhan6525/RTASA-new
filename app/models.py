@@ -87,3 +87,22 @@ class CheckpointRow(Base):
     seq: Mapped[int] = mapped_column(Integer, primary_key=True)
     head_hash: Mapped[str] = mapped_column(String)
     countersignatures_json: Mapped[dict] = mapped_column(JSON)
+
+
+class RecoveryRequestRow(Base):
+    """Durability for `rtasa.recovery.RecoveryRequest` -- previously
+    in-memory only (`RTASASystem.recovery_requests`), so a backend restart
+    silently dropped every pending/in-progress recovery request and its
+    approvals-so-far, even though roles/records/the audit log all survived.
+    Approvals are stored hex-encoded, the same convention RecordRow already
+    uses for its ciphertext fields -- they're RSA-OAEP-wrapped shares
+    (ciphertext under the requester's own public key), not secrets that
+    need sealing the way RoleRow's private key material does."""
+
+    __tablename__ = "recovery_requests"
+
+    request_id: Mapped[str] = mapped_column(String, primary_key=True)
+    record_id: Mapped[str] = mapped_column(String)
+    requester_role_id: Mapped[str] = mapped_column(String)
+    approvals_json: Mapped[list] = mapped_column(JSON)          # list[str] -- hex-encoded wrapped shares
+    approving_roles_json: Mapped[list] = mapped_column(JSON)    # list[str] -- custodian role_ids, same order

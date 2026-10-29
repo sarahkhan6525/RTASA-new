@@ -20,7 +20,7 @@ from rtasa.recovery import approve_share, recover_record, request_recovery
 from rtasa.rsa_wrap import ShareUnwrapError, unwrap_share, wrap_share
 from rtasa.shamir import ShareVerificationError, reconstruct_secret, split_secret
 
-from .conftest import otp_for
+from conftest import otp_for
 
 
 def _issue(keystore, audit_log, custodian_role_ids, cover_images, record_id="rec-1", entitled=("requester_q",)):

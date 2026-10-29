@@ -166,7 +166,6 @@ export default function OwnerPortal() {
       }
 
       log("Fetching your one-time code...");
-      saveCredential(session.role_id, ownerPassphrase);
       const otp = await api.getOtp(session.role_id);
 
       log(mode === "file" ? `Reading file "${file!.name}"...` : "Reading your text...");
@@ -184,6 +183,12 @@ export default function OwnerPortal() {
         threshold,
         entitled_requesters: resolvedRequesterIds,
       });
+      // Only remember the owner passphrase once issueRecord has actually
+      // accepted it -- saving it earlier (before this, the only call that
+      // validates owner_passphrase) risked persisting a wrong passphrase to
+      // localStorage on a failed attempt, which would then be silently
+      // pre-filled next time and resubmitted, unnoticed, by the owner.
+      saveCredential(session.role_id, ownerPassphrase);
       setIssueSettled(true);
       log("Audit entries written for every step above.");
       setResult(response);

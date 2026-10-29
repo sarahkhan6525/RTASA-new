@@ -45,9 +45,17 @@ app/               FastAPI + SQLAlchemy backend around rtasa/
                      configures the rtasa.security JSON-lines log
   security_config.py RTASA_DEMO_MODE / RTASA_SECURITY_LOG flags
   models.py          SQLAlchemy ORM tables
+  schemas.py         Pydantic request/response models for the routers
+  db.py              SQLAlchemy engine/session setup
+  deps.py            shared FastAPI dependencies (get_db, get_system)
   persistence.py     RTASASystem <-> DB round trip (seals/unseals the
                      sensitive key-store fields at the storage boundary)
-  routers/           roles / records / recovery / audit endpoints
+  email_otp.py       sends portal-login codes by email (SMTP, see .env.example)
+  auth.py            signs/verifies the portal's own session tokens (JWT) --
+                     separate from, and does not weaken, rtasa/keystore.py's
+                     credential+OTP gate on issuance/approval/recovery
+  routers/           roles, records, recovery, audit, auth (portal login),
+                     dashboard, security_tests -- one module per concern
 
 webui/index.html   the demo frontend (see "Web UI" below) -- single file,
                    no build step, served same-origin at /ui by app/main.py
@@ -97,7 +105,13 @@ cli.py             `python cli.py demo|covers|serve|test`
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env               # optional -- only needed for email-OTP portal login
 ```
+
+`python cli.py demo` and `python cli.py test` need no `.env` at all. Only
+`python cli.py serve`'s portal login flow (`app/email_otp.py`) reads it,
+and even then it fails with a clear error rather than crashing if it's
+left unset -- see `.env.example` for what to fill in and why.
 
 ## Run the demo
 
@@ -180,6 +194,45 @@ the layer and section it exercises:
    could, side by side with the real log's own clean verification. Nothing
    about your actual audit log is ever touched by this button.
 
+Screenshots below are of the real running app -- nothing staged or mocked:
+
+<table>
+<tr>
+<td width="50%">
+
+**1. Roles** -- quick-start creates the owner/custodian/requester set.
+
+<img src="docs/screenshots/01-roles.png" alt="Roles tab: five roles created, OTP column for each">
+
+</td>
+<td width="50%">
+
+**2. Issue a record** -- the actual carrier images, each with one
+custodian's share really embedded in its pixel LSBs.
+
+<img src="docs/screenshots/02-issue-carriers.png" alt="Issue tab: record issued, three carrier images shown">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**3. Recover** -- threshold approvals collected, message decrypted.
+
+<img src="docs/screenshots/03-recovered-message.png" alt="Recover tab: 2 of 2 approvals collected, recovered plaintext shown">
+
+</td>
+<td width="50%">
+
+**4. Tamper demo** -- the same `verify()` call, clean vs. a quietly
+edited copy of one entry.
+
+<img src="docs/screenshots/04-tamper-demo.png" alt="Audit tab: clean log verifies, tampered copy fails verification">
+
+</td>
+</tr>
+</table>
+
 The UI holds no state and does no cryptography of its own -- it is a thin
 presentation layer calling the same routers the API section above
 describes, so anything it shows is the real backend's real output.
@@ -248,28 +301,40 @@ actual LSB matching:
   labeled simplification instead of a guessed formula -- see each file's
   own docstring for exactly what was verified and what wasn't.
 * `spam.py` + `evaluate.py`'s shrinkage Fisher LDA stand in for the
-  paper's learned SPAM-feature detector, but use a smaller, order-1,
-  2-direction feature set rather than the published order-3, 8-direction
-  SPAM construction (`spam.py`'s docstring explains why: that exact
-  construction couldn't be verified from a primary source either, and a
-  guessed 686-dimensional feature extractor is worse than an honestly
-  smaller one).
+  paper's learned SPAM-feature detector, using a smaller, order-1,
+  2-direction feature set (98 features) rather than the published
+  order-2, 8-direction SPAM construction (686 features). A from-scratch
+  implementation of the full 686-feature version was tested separately
+  and showed the same behavior described below, so the feature-set size
+  is *not* why this detector's numbers diverge from the paper's.
 
 Running it reproduces the paper's central qualitative claim well for the
 two verified classical detectors: RS and SPA both detect LSB replacement
 increasingly well as the embedding rate rises, and both stay near chance
 against RTASA's real LSB matching at every rate tested -- consistent with
 Sec. V-D's reported numbers (SPA ~0.86 AUC vs. replacement at 0.1 bpp;
-RTASA at or below 0.53 AUC). The reduced SPAM+LDA detector reproduces
-that pattern only at low, realistic embedding rates (RTASA's actual
-payload -- one wrapped RSA-OAEP share -- is around 0.005 bpp on a 512x768
-cover); at the higher stress-test rates in the sweep it climbs well above
-chance against LSB matching too, which the paper's own (full) SPAM+LDA
-result does not show. That gap is reported here rather than tuned away:
-the most likely explanation is the smaller feature construction and the
-small (24-image) synthetic sample this harness trains on, both named
-above, not a flaw in RTASA's actual embedding. `run_steganalysis.py`
-prints this caveat directly when it triggers.
+RTASA at or below 0.53 AUC).
+
+The SPAM+LDA line does not reproduce that pattern, including at RTASA's
+actual payload rate (one wrapped RSA-OAEP share is around 0.005 bpp on a
+512x768 cover, well below every rate this sweep tests). The tell is that
+it separates LSB matching from LSB replacement by almost nothing -- the
+same near-perfect AUC for both -- even though matching is supposed to be
+far harder to detect, and RS/SPA (which need no training) show exactly
+that expected gap clearly. A detector that can't tell a hard case from an
+easy one apart has learned something generic about the training images,
+not about either embedding method. Since this persists with the full
+686-feature SPAM construction too, the most likely cause is specific to
+*learned/trained* detectors on this harness's 24 synthetic, low-diversity
+cover images -- RS and SPA need no training and aren't affected the same
+way. This is reported here rather than tuned away or hidden:
+`run_steganalysis.py` prints the measured evidence (the matching-vs-
+replacement AUC gap) directly whenever it triggers, and neither the paper
+nor this README treats this detector's numbers on synthetic covers as
+evidence about RTASA's actual concealment strength in either direction --
+that would need a real, much larger natural-image corpus, which is
+exactly what Section 5.1 explains this synthetic substitute stands in
+for and can't provide here.
 
 Both scripts write a PNG chart (`benchmark_latency.png`,
 `steganalysis_auc.png`) alongside the console table.

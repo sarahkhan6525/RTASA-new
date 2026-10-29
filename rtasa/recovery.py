@@ -99,6 +99,19 @@ def approve_share(
     if custodian_role_id not in record.custodian_role_ids:
         raise AuthorizationError(f"'{custodian_role_id}' does not hold a share of '{record.record_id}'")
 
+    # Guard against a double approval from the same custodian (a double
+    # click, a retried network request, two open tabs) -- without this,
+    # `request.approving_roles`/`approvals` could reach `record.threshold`
+    # with fewer *distinct* custodians than the paper's |A| >= k actually
+    # requires, and `reconstruct_secret` (rtasa/shamir.py) would later
+    # reject the duplicate share index with a bare ValueError that nothing
+    # downstream was catching -- a confusing 500 instead of a clean 403
+    # at the point the mistake actually happened.
+    if custodian_role_id in request.approving_roles:
+        raise AuthorizationError(
+            f"'{custodian_role_id}' has already approved this recovery request for '{record.record_id}'"
+        )
+
     carrier = record.carrier_for(custodian_role_id)
 
     # (x_i, y_i) = OAEP^-1_sk_i( Extract(G_i; kappa_i) )   -- eq. (8)

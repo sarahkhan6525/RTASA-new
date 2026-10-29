@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { LogOut } from "lucide-react";
+import { LogOut, Download } from "lucide-react";
 import { api, type RecordOut } from "../api/client";
 import { getCredential } from "../lib/credStore";
 import { clearSession, getSession } from "../lib/session";
 import LiveSteps, { REQUEST_STEPS, RECOVERY_STEPS } from "../components/LiveSteps";
 import AuditFeed from "../components/AuditFeed";
 
+// Text records are base64 of lib/util.ts's UTF-8-safe encoding, so this
+// reverses that. A record protected as a *file* (ProtectRecord.tsx's
+// fileToBase64) is the base64 of the file's raw bytes instead -- not
+// every byte sequence is valid UTF-8, so this can legitimately throw for
+// a perfectly recovered file. Callers must not treat that throw as
+// recovery having failed -- by the time this runs, the backend already
+// returned the decrypted bytes successfully.
 function b64dec(str: string): string {
   return decodeURIComponent(
     atob(str)
@@ -15,6 +22,67 @@ function b64dec(str: string): string {
       .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
       .join("")
   );
+}
+
+// Mirrors lib/util.ts's fileToBase64 header exactly: an 8-byte ASCII magic
+// marker + a 2-byte big-endian length + the filename's UTF-8 bytes, in
+// front of the file's own raw bytes. If the magic marker isn't there (an
+// older record protected before this header existed, or anything that
+// didn't go through fileToBase64), this falls back to returning the
+// payload untouched with no filename -- never throws, never corrupts a
+// real recovery.
+const FILE_HEADER_MAGIC = "RTASAFN1";
+
+function stripFileHeader(base64: string): { base64: string; filename: string | null } {
+  let binary: string;
+  try {
+    binary = atob(base64);
+  } catch {
+    return { base64, filename: null };
+  }
+  if (
+    binary.length < FILE_HEADER_MAGIC.length + 2 ||
+    binary.slice(0, FILE_HEADER_MAGIC.length) !== FILE_HEADER_MAGIC
+  ) {
+    return { base64, filename: null };
+  }
+
+  const lenStart = FILE_HEADER_MAGIC.length;
+  const nameLen = (binary.charCodeAt(lenStart) << 8) | binary.charCodeAt(lenStart + 1);
+  const nameStart = lenStart + 2;
+  const nameEnd = nameStart + nameLen;
+  if (binary.length < nameEnd) {
+    // Malformed/short -- don't guess, just fall back safely.
+    return { base64, filename: null };
+  }
+
+  let filename: string;
+  try {
+    filename = decodeURIComponent(
+      binary
+        .slice(nameStart, nameEnd)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+  } catch {
+    return { base64, filename: null };
+  }
+
+  const rest = binary.slice(nameEnd); // still a "one char per byte" binary string
+  return { base64: btoa(rest), filename };
+}
+
+function downloadBase64(base64: string, filename: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes]));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function RequesterPortal() {
@@ -31,6 +99,8 @@ export default function RequesterPortal() {
   const [recovering, setRecovering] = useState(false);
   const [recoverSettled, setRecoverSettled] = useState(false);
   const [recoverResult, setRecoverResult] = useState<string | null>(null);
+  const [recoverBinary, setRecoverBinary] = useState<string | null>(null);
+  const [recoverFilename, setRecoverFilename] = useState<string | null>(null);
   const [recoverBlocked, setRecoverBlocked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +142,8 @@ export default function RequesterPortal() {
     setRequestId(null);
     setApprovedCount(0);
     setRecoverResult(null);
+    setRecoverBinary(null);
+    setRecoverFilename(null);
     setRecoverBlocked(null);
     setError(null);
   }
@@ -127,6 +199,8 @@ export default function RequesterPortal() {
     setRecovering(true);
     setRecoverSettled(false);
     setRecoverResult(null);
+    setRecoverBinary(null);
+    setRecoverFilename(null);
     setRecoverBlocked(null);
     setError(null);
     try {
@@ -136,14 +210,24 @@ export default function RequesterPortal() {
         requester_passphrase: passphrase,
         requester_otp: otp.otp,
       });
+      // The backend call above is the actual access decision -- if we got
+      // here, recovery succeeded. Decoding the bytes for display is a
+      // separate, purely cosmetic step that must not be able to turn a
+      // real success into a false "blocked" (see b64dec's docstring).
       setRecoverSettled(true);
-      setRecoverResult(b64dec(res.message_base64));
+      try {
+        setRecoverResult(b64dec(res.message_base64));
+      } catch {
+        const { base64, filename } = stripFileHeader(res.message_base64);
+        setRecoverBinary(base64);
+        setRecoverFilename(filename);
+      }
       toast.success("Record recovered");
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setRecoverSettled(true);
       setRecoverBlocked(message);
-      toast.error("Access blocked. See details below.");
+      toast.error("Access blocked -- see details below");
     } finally {
       setRecovering(false);
     }
@@ -160,7 +244,7 @@ export default function RequesterPortal() {
         <div>
           <h1 className="text-xl font-semibold text-slate-100">Requester Portal</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Signed in as <span className="text-slate-300">{session.display_name}</span>. Entitled to request{" "}
+            Signed in as <span className="text-slate-300">{session.display_name}</span> -- entitled to request{" "}
             {myRecords.length} record{myRecords.length === 1 ? "" : "s"}.
           </p>
         </div>
@@ -237,7 +321,7 @@ export default function RequesterPortal() {
                   {approvedCount} / {threshold}
                 </div>
                 <div className={`text-xs font-medium ${approvedCount >= threshold ? "text-emerald-400" : "text-amber-400"}`}>
-                  {approvedCount >= threshold ? "THRESHOLD REACHED" : "waiting for custodians to approve"}
+                  {approvedCount >= threshold ? "THRESHOLD REACHED" : "waiting for custodians to approve -- updates automatically"}
                 </div>
               </div>
               <button
@@ -267,6 +351,23 @@ export default function RequesterPortal() {
                 <div className="mt-4 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4">
                   <div className="text-sm font-semibold text-emerald-300">✓ Record recovered</div>
                   <div className="mt-2 rounded-lg bg-slate-950 p-3 text-sm text-slate-200">"{recoverResult}"</div>
+                </div>
+              )}
+              {recoverBinary && (
+                <div className="mt-4 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4">
+                  <div className="text-sm font-semibold text-emerald-300">✓ Record recovered</div>
+                  <div className="mt-2 text-xs text-slate-400">
+                    This record was protected as a file, not typed text, so it can't be shown inline here.
+                  </div>
+                  <button
+                    onClick={() =>
+                      downloadBase64(recoverBinary, recoverFilename ?? `${record?.record_id ?? "record"}-recovered`)
+                    }
+                    className="mt-3 flex items-center gap-1.5 rounded-lg border border-emerald-700/60 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-900/30"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {recoverFilename ? `Download "${recoverFilename}"` : "Download recovered file"}
+                  </button>
                 </div>
               )}
             </div>

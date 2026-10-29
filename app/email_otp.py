@@ -15,7 +15,10 @@ Configuration (environment variables -- put these in a local `.env` file
 at the project root; see `.env.example`, and NEVER commit a real `.env`):
 
     SMTP_HOST       e.g. smtp.gmail.com
-    SMTP_PORT       e.g. 587
+    SMTP_PORT       587 (STARTTLS, the default) or 465 (implicit TLS) --
+                    if 587 fails with "Connection unexpectedly closed"
+                    (common on networks that interfere with the STARTTLS
+                    upgrade), switch to 465 instead
     SMTP_USERNAME   the sending Gmail address
     SMTP_PASSWORD   a Gmail "App Password" (NOT your real password --
                     generate one at https://myaccount.google.com/apppasswords,
@@ -75,15 +78,56 @@ def _smtp_configured() -> bool:
     )
 
 
+def _send_via_smtp(msg: EmailMessage) -> None:
+    """Shared connect-login-send for all three email kinds below. Port 465
+    is "implicit TLS" (encrypted from the very first byte, via SMTP_SSL);
+    every other port (587 by default) is "STARTTLS" (connects in the
+    clear, then upgrades). Some networks -- hotel/campus wifi, some
+    antivirus/firewall software doing SSL inspection -- interfere with the
+    STARTTLS upgrade step specifically and drop the connection mid-handshake
+    (smtplib surfaces that as "Connection unexpectedly closed"), while
+    leaving a straight TLS-from-the-start connection on 465 alone. Picking
+    the right one by port means a user who hits that on 587 can work around
+    it just by changing SMTP_PORT=465 in their .env, with no code change."""
+    host = os.environ["SMTP_HOST"]
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    username = os.environ["SMTP_USERNAME"]
+    password = os.environ["SMTP_PASSWORD"]
+
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=15) as server:
+            server.login(username, password)
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(host, port, timeout=15) as server:
+            server.starttls()
+            server.login(username, password)
+            server.send_message(msg)
+
+
 def send_login_otp(role_id: str, display_name: str, to_email: str) -> None:
     """Generates a fresh 6-digit code, remembers it for this role_id, and
     emails it. Raises EmailNotConfiguredError / EmailSendError instead of
-    ever silently doing nothing."""
+    ever silently doing nothing -- except the DEMO_MODE fallback just
+    below, which mirrors the existing GET /roles/{id}/otp escape hatch for
+    the TOTP factor (security_config.py): with no SMTP configured, a real
+    deployment (DEMO_MODE=0) still hard-stops here, but a local/demo run
+    prints the code to the server's own terminal instead of blocking sign-in
+    entirely on setting up a mail server."""
     if not to_email:
         raise EmailNotConfiguredError(
             f"role '{role_id}' has no email on file -- it can't use the email login flow"
         )
     if not _smtp_configured():
+        if DEMO_MODE:
+            code = "".join(secrets.choice("0123456789") for _ in range(OTP_LENGTH))
+            _pending[role_id] = _PendingOtp(code=code, expires_at=time.time() + OTP_TTL_SECONDS)
+            print(
+                f"[demo-mode email-OTP fallback -- SMTP not configured] "
+                f"{role_id} <{to_email}> code = {code}",
+                flush=True,
+            )
+            return
         raise EmailNotConfiguredError(
             "email sending isn't configured on this server yet -- set SMTP_HOST / "
             "SMTP_USERNAME / SMTP_PASSWORD in a .env file at the project root (see "
@@ -104,27 +148,27 @@ def send_login_otp(role_id: str, display_name: str, to_email: str) -> None:
         f"you can safely ignore this email.\n"
     )
 
-    host = os.environ["SMTP_HOST"]
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    username = os.environ["SMTP_USERNAME"]
-    password = os.environ["SMTP_PASSWORD"]
-
     try:
-        with smtplib.SMTP(host, port, timeout=15) as server:
-            server.starttls()
-            server.login(username, password)
-            server.send_message(msg)
+        _send_via_smtp(msg)
     except Exception as exc:  # noqa: BLE001 -- surface *any* SMTP failure clearly, never swallow it
+        if DEMO_MODE:
+            # SMTP *is* configured here, but the live attempt still failed
+            # (network blocking outbound mail, a transient Gmail hiccup,
+            # etc). The code above was already generated and is sitting in
+            # _pending regardless of whether the email made it out, so in
+            # DEMO_MODE this is recoverable, not fatal: print it the same
+            # way the "SMTP not configured at all" branch above does, and
+            # let sign-in proceed, instead of leaving the only copy of a
+            # valid code trapped in memory with no way to read it. A real
+            # deployment (DEMO_MODE=0) still raises below -- there, a
+            # failed send must surface as a failure, not be papered over.
+            print(
+                f"[demo-mode email-OTP fallback -- send failed ({exc})] "
+                f"{role_id} <{to_email}> code = {code}",
+                flush=True,
+            )
+            return
         raise EmailSendError(f"could not send the sign-in email: {exc}") from exc
-
-    if DEMO_MODE:
-        # Printed to the server's own terminal only -- never returned by the
-        # API, never shown in the browser. A deliberate live-demo safety net:
-        # if a venue's network blocks outbound SMTP (common on
-        # institutional WiFi), you can still read the real code here and
-        # type it in by hand -- same idea as the existing GET
-        # /roles/{id}/otp demo-mode escape hatch for the TOTP factor.
-        print(f"[demo-mode email-OTP fallback] {role_id} <{to_email}> code = {code}", flush=True)
 
 
 def send_recovery_notification(
@@ -166,15 +210,7 @@ def send_recovery_notification(
         f"normally with your email and passphrase.)\n"
     )
 
-    host = os.environ["SMTP_HOST"]
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    username = os.environ["SMTP_USERNAME"]
-    password = os.environ["SMTP_PASSWORD"]
-
-    with smtplib.SMTP(host, port, timeout=15) as server:
-        server.starttls()
-        server.login(username, password)
-        server.send_message(msg)
+    _send_via_smtp(msg)
 
 
 def send_role_credentials(
@@ -211,15 +247,7 @@ def send_role_credentials(
         f"and to approve or request access once you're in.\n"
     )
 
-    host = os.environ["SMTP_HOST"]
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    username = os.environ["SMTP_USERNAME"]
-    password = os.environ["SMTP_PASSWORD"]
-
-    with smtplib.SMTP(host, port, timeout=15) as server:
-        server.starttls()
-        server.login(username, password)
-        server.send_message(msg)
+    _send_via_smtp(msg)
 
 
 def verify_login_otp(role_id: str, code: str) -> bool:

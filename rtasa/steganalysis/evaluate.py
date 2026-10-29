@@ -209,15 +209,30 @@ def main() -> None:
                 print(f"  {embedder_name:<22} {label:<10} mean AUC = {statistics.mean(vals):.3f}")
 
     matching_lda = [r.spam_lda_auc for r in results if r.embedder_name == "LSB matching (RTASA)"]
+    replacement_lda = [r.spam_lda_auc for r in results if r.embedder_name == "LSB replacement"]
     if matching_lda and max(v for v in matching_lda if v == v) > 0.65:
+        paired_gap = [abs(m - r) for m, r in zip(matching_lda, replacement_lda) if m == m and r == r]
+        gap = statistics.mean(paired_gap) if paired_gap else float("nan")
         print(
-            "\nNote on the SPAM+LDA detector: it stays near chance against LSB matching at low "
-            "rates, same as RS and SPA, but climbs above chance at the higher stress-test rates "
-            "in this sweep -- unlike RS and SPA, which both stay near chance at every rate tested, "
-            "matching the paper's claim. This divergence is attributed to spam.py's reduced "
-            "order-1, 2-direction feature construction (vs. the paper's order-3, 8-direction SPAM) "
-            "and this harness's small synthetic-image sample, documented honestly rather than "
-            "tuned away -- see spam.py and this module's docstrings for the full explanation."
+            "\nNote on the SPAM+LDA detector: unlike RS and SPA, it does not stay near chance "
+            "against LSB matching here, including at RTASA's own low, realistic rate -- not only "
+            "at the higher stress-test rates in this sweep. This is NOT fixed by using a richer "
+            "feature set: an independent test with the full published order-2, 8-direction SPAM "
+            "construction (686 features, vs. this module's reduced 98) showed the same "
+            "near-perfect separation, so feature reduction is not the cause.\n"
+            f"The likely cause: this detector is *trained*, on only {num_images} synthetic cover "
+            "images, and it separates LSB matching from LSB replacement by an average AUC gap of "
+            f"just {gap:.3f} -- i.e. it barely tells the two embedders apart, even though matching "
+            "should be far harder to detect than replacement (RS and SPA, which need no training, "
+            "show exactly that gap clearly). That pattern -- a trained classifier that reacts "
+            "almost identically to a hard-to-detect and an easy-to-detect embedder -- is the "
+            "signature of a model that has learned something generic about this small, "
+            "synthetically-generated image set rather than anything about either embedding "
+            "method. Treat this detector's numbers on this harness as unreliable in either "
+            "direction, not as evidence about RTASA's actual concealment strength; a trustworthy "
+            "answer needs a much larger set of natural (not synthetic) cover images, which the "
+            "paper's own evaluation uses and which Section 5.1's Kodak-suite redistribution "
+            "restriction rules out here."
         )
 
     try:
